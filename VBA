@@ -1,0 +1,491 @@
+Sub MyRecon()
+
+Dim reconWB As Workbook
+Dim baseData_sh As Worksheet
+Dim Invoice_sh As Worksheet
+Dim Payment_sh As Worksheet
+Dim Summary_sh As Worksheet
+Dim rng As Range
+Dim cl As Range
+
+    MsgBox "Select AR Recon for CIC Support SAP dump File !!! "
+    aAR_CIC = Application.GetOpenFilename("Excel Files(*.xls*),*.xls*", Title:="Select AR Recon for CIC Support SAP dump File")
+    
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = True
+    'Remember start time
+    StartTime = Timer
+    
+    If aAR_CIC <> False Then
+        Workbooks.Open Filename:=aAR_CIC
+        Set reconWB = ActiveWorkbook
+        reconWB.Sheets(1).Name = "Base Data"
+        Range("L1").Value = "Doc(Month/Year)"
+        Range("M1").Value = "Net(Month/Year)"
+        rLR = Range("A" & Rows.Count).End(xlUp).Row
+        
+        Range("L2:L" & rLR).Value = "=MONTH(A2)&""#""&YEAR(A2)"
+        Range("M2:M" & rLR).Value = "=MONTH(G2)&""#""&YEAR(G2)"
+        
+        Range("L2:M" & rLR).Copy
+        Range("L2").PasteSpecial xlPasteValues
+        
+        reconWB.Sheets.Add
+        reconWB.ActiveSheet.Name = "Invoice"
+        reconWB.Sheets.Add
+        reconWB.ActiveSheet.Name = "Payment"
+        reconWB.Sheets.Add
+        reconWB.ActiveSheet.Name = "Summary"
+        
+    Else
+        MsgBox "You haven't selected the asking file !!!", vbCritical
+    Exit Sub
+    End If
+
+reconWB.Activate
+
+Set baseData_sh = reconWB.Sheets("Base Data")
+Set Invoice_sh = reconWB.Sheets("Invoice")
+Set Payment_sh = reconWB.Sheets("Payment")
+Set Summary_sh = reconWB.Sheets("Summary")
+
+baseData_sh.Select
+Cells.Copy
+    Payment_sh.Select
+    Range("A1").PasteSpecial
+    Payment_lr = Invoice_sh.Range("I" & Rows.Count).End(xlUp).Row
+ 
+    Range("A1:Z" & Payment_lr).AutoFilter field:=4, Criteria1:="<>DZ", Operator:=xlFilterValues
+    end_lr = Payment_sh.Range("I" & Rows.Count).End(xlUp).Row
+    If end_lr >= 2 Then Range("A2:Z" & end_lr).SpecialCells(xlCellTypeVisible).EntireRow.Delete
+    ActiveSheet.AutoFilterMode = False
+    end_lr = Payment_sh.Range("I" & Rows.Count).End(xlUp).Row
+    Range("A2:Z" & end_lr).Sort Key1:=Range("A1"), order1:=xlAscending, Header:=xlYes
+    Columns("A:Z").AutoFit
+baseData_sh.Select
+    Cells.Copy
+    Invoice_sh.Select
+    Range("A1").PasteSpecial
+    Invoice_lr = Invoice_sh.Range("A" & Rows.Count).End(xlUp).Row
+    Range("A1:Z" & Invoice_lr).AutoFilter field:=4, Criteria1:="=DZ", Operator:=xlFilterValues
+    
+    end_lr = Invoice_sh.Range("I" & Rows.Count).End(xlUp).Row
+    
+    If end_lr >= 2 Then Range("A2:Z" & end_lr).SpecialCells(xlCellTypeVisible).EntireRow.Delete
+    ActiveSheet.AutoFilterMode = False
+    
+    end_lr = Invoice_sh.Range("I" & Rows.Count).End(xlUp).Row
+    
+    Range("A1:Z" & end_lr).Sort Key1:=Range("H1"), order1:=xlAscending, Header:=xlYes
+    Range("A1:Z" & end_lr).Sort Key1:=Range("A1"), order1:=xlAscending, Header:=xlYes, key2:=Range("H1"), order2:=xlAscending, key3:=Range("I1"), order3:=xlDescending
+    
+    'Selection.Subtotal GroupBy:=7, Function:=xlSum, TotalList:=Array(11), Replace:=True, SummaryBelowData:=True
+    'Cells.Copy
+    'Range("A1").PasteSpecial xlPasteValues
+    'Cells.Rows.Ungroup
+    'Cells.Rows.Ungroup
+
+    Range("N1").Value = "2%"
+    Range("O1").Value = "2.5%"
+    
+    Range("N2:N" & end_lr).Value = "=J2*$N$1"
+    Range("O2:O" & end_lr).Value = "=J2*$O$1"
+    Range("L1:O" & end_lr).Copy
+    Range("L1").PasteSpecial xlPasteValues
+    Columns("A:Z").AutoFit
+    Range("A2:Z" & end_lr).Subtotal GroupBy:=8, Function:=xlSum, TotalList:=Array(9, 11), Replace:=True, SummaryBelowData:=True
+    'Range("A2:Z" & end_lr).Subtotal GroupBy:=8, Function:=xlSum, TotalList:=Array(9, 11), Replace:=True, SummaryBelowData:=True
+    
+    Cells.Rows.Ungroup
+    Cells.Rows.Ungroup
+    'Range("A2:Z" & end_lr).Subtotal GroupBy:=8, Function:=xlSum, TotalList:=Array(9, 11), Replace:=True, SummaryBelowData:=True
+    '    Cells.Rows.Ungroup
+    '    Cells.Rows.Ungroup
+
+end_lr = Range("H" & Rows.Count).End(xlUp).Row
+Range("A1:Z" & end_lr).AutoFilter field:=1, Criteria1:="", Operator:=xlFilterValues
+flr_R = Range("H" & Rows.Count).End(xlUp).Row
+If flr_R >= 2 Then
+    Range("A2:Z" & flr_R).SpecialCells(xlCellTypeVisible).ClearContents
+    ActiveSheet.AutoFilterMode = False
+End If
+    ActiveSheet.AutoFilterMode = False
+    
+For pd = 1 To flr_R
+    Range("L" & pd).Select
+    If Range("L" & pd).Value = "" Then Range("L" & pd).Value = Range("L" & pd - 1).Value
+    If Range("M" & pd).Value = "" Then Range("M" & pd).Value = Range("M" & pd - 1).Value
+Next
+Range("L1").Select
+ 
+Payment_sh.Select
+pLR = Range("A" & Rows.Count).End(xlUp).Row
+For p = 2 To pLR
+    Payment_sh.Select
+    payDocDate = Range("A" & p).Value
+    payAmt = Range("I" & p).Value
+    payMY = Range("L" & p).Value
+
+    Invoice_sh.Select
+    ActiveSheet.AutoFilterMode = False
+    iLR = Range("A" & Rows.Count).End(xlUp).Row
+        For ID = 2 To iLR
+            If Range("A" & ID).Value < payDocDate And Range("G" & ID).Value >= payDocDate And Range("B" & ID).Value = Range("C" & ID - 1).Value Then
+                Range("A" & ID).Select
+                'actR = ActiveCell.Row
+                amtSubT = Application.WorksheetFunction.Sum(Range("I2:I" & ID))
+                disT2 = Application.WorksheetFunction.Sum(Range("N2:N" & ID))
+                disT25 = Application.WorksheetFunction.Sum(Range("O2:O" & ID))
+                calC = Abs(payAmt + amtSubT)
+                '    Range("A1:Z" & iLR).AutoFilter field:=16, Criteria1:="", Operator:=xlFilterValues
+                '    Range("A1:Z" & iLR).AutoFilter field:=4, Criteria1:="<>DZ", Operator:=xlFilterValues
+                '    Range("A1:Z" & iLR).AutoFilter field:=12, Criteria1:=payMY, Operator:=xlFilterValues
+                '    Range("A1:Z" & iLR).AutoFilter field:=1, Criteria1:="<=" & payDocDate, Operator:=xlFilterValues ', Criteria2:="<=" & payDocDate
+                '    Range("A1:Z" & iLR).AutoFilter field:=7, Criteria1:=">=" & payDocDate, Operator:=xlFilterValues ', Criteria2:="<=" & payDocDate
+                If calC <> 0 Then
+                    If disT2 = calC Or disT2 >= calC + 30 Then
+                        MsgBox "this is matched  with discount 2%"
+                        Range("I2:I" & fltRow).SpecialCells(xlCellTypeVisible).Font.Bold = True
+                        ActiveSheet.AutoFilterMode = False
+                        Rows(fltRow + 1).Insert shift:=xlDown
+                        Payment_sh.Select
+                        Range("A" & p & "Z" & p).Cut Invoice_sh.Range("A" & fltRow + 1)
+                        Invoice_sh.Select
+                        Range("A" & fltRow + 1).Font.Bold = True
+                        Rows(fltRow + 2).Insert shift:=xlDown
+                    End If
+                    If disT25 = calC Or disT25 >= calC + 30 Then
+                        MsgBox "this is matched  with discount 2.5%"
+                        Range("I2:I" & fltRow).SpecialCells(xlCellTypeVisible).Font.Bold = True
+                        ActiveSheet.AutoFilterMode = False
+                        Rows(fltRow + 1).Insert shift:=xlDown
+                        Payment_sh.Select
+                        Range("A" & p & "Z" & p).Cut Invoice_sh.Range("A" & fltRow + 1)
+                        Invoice_sh.Select
+                        Range("A" & fltRow + 1).Font.Bold = True
+                        Rows(fltRow + 2).Insert shift:=xlDown
+                    End If
+                  If disT2 <> calC And disT25 <> calC + 30 Then
+                        Invoice_sh.Select
+                        Range("P2:P" & fltRow).SpecialCells(xlCellTypeVisible).Value = "Chkd"
+                        ActiveSheet.AutoFilterMode = False
+                        Range("A1:Z" & iLR).AutoFilter field:=12, Criteria1:=payMY, Operator:=xlFilterValues
+                        fltRow = Range("A" & Rows.Count).End(xlUp).Row
+                        ActiveSheet.AutoFilterMode = False
+                        Rows(fltRow + 1).Insert shift:=xlDown
+                        Payment_sh.Select
+                        Range("A" & p & ":Z" & p).Cut Invoice_sh.Range("A" & fltRow + 1) '.PasteSpecial xlPasteValues
+                        Invoice_sh.Select
+                        'Rows(fltRow + 1).Insert shift:=xlDown
+                        'Range("L" & fltRow + 1).Value = payMY
+                  End If
+                Else
+                        Invoice_sh.Select
+                        ActiveSheet.AutoFilterMode = False
+                        Range("A1:Z" & iLR).AutoFilter field:=12, Criteria1:=payMY, Operator:=xlFilterValues
+                        fltRow = Range("A" & Rows.Count).End(xlUp).Row
+                        ActiveSheet.AutoFilterMode = False
+                        Rows(fltRow + 1).Insert shift:=xlDown
+                        Payment_sh.Select
+                        Range("A" & p & ":Z" & p).Cut Invoice_sh.Range("A" & fltRow + 1) '.PasteSpecial xlPasteValues
+                        Invoice_sh.Select
+            
+                End If
+            End If
+        Next
+Next
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Invoice_sh.Select
+Invoice_lr = Invoice_sh.Range("A" & Rows.Count).End(xlUp).Row
+Payment_lr = Payment_sh.Range("A" & Rows.Count).End(xlUp).Row
+
+For I = 2 To Invoice_lr + Payment_lr
+    Invoice_sh.Select
+    myCheck = Range("L" & I).Value
+     If myCheck = "Total" Then
+        
+        iIamt = Invoice_sh.Range("I" & I).Value
+        docDate = Invoice_sh.Range("A" & I - 1).Value
+        netdDate = Invoice_sh.Range("G" & I - 1).Value
+        
+        Payment_sh.Select
+        For p = 2 To Payment_lr + 1
+            
+            payDate = Payment_sh.Range("A" & p).Value
+            payAmt = Payment_sh.Range("I" & p).Value
+            payIn_deff = Abs(iIamt + payAmt)
+            
+            If payDate >= docDate And payDate <= netdDate And payIn_deff <= 30 Then
+                    Payment_sh.Range("L" & p).Value = payIn_deff
+                    Payment_sh.Rows(p).Copy
+                    Invoice_sh.Select
+                    Range("A" & I).PasteSpecial xlPasteValuesAndNumberFormats
+                    
+                    Rows(I).Font.Bold = False
+                    Rows(I + 1).Insert shift:=xlDown
+                    Range("I" & I).Select
+                    
+                    For sumB = I To 1 Step -1
+                      InvBold = Application.WorksheetFunction.Sum(Range("I" & I & ":I" & sumB))
+                        If Abs(InvBold) = payIn_deff Then
+                            Range("I" & I & ":I" & sumB).Font.Bold = True
+                            Range("M" & I & ":M" & sumB).Value = "Matched"
+                            Exit For
+                        End If
+                    Next
+                    Payment_sh.Select
+                    Rows(p).Select
+                    Rows(p).Delete
+            End If
+            
+        Next
+    End If
+Next
+
+Set iIamt = Nothing
+Set docDate = Nothing
+Set netdDate = Nothing
+Set myCheck = Nothing
+Set payDate = Nothing
+Set payAmt = Nothing
+Set payIn_deff = Nothing
+
+sInvoice_lr = Invoice_sh.Range("I" & Rows.Count).End(xlUp).Row
+sPayment_lr = Payment_sh.Range("I" & Rows.Count).End(xlUp).Row
+
+For I = 2 To sInvoice_lr + sPayment_lr
+    Invoice_sh.Select
+    myCheck = Right(Range("H" & I).Value, 5)
+     If myCheck = "Total" Then
+        
+        iIamt = Invoice_sh.Range("I" & I).Value
+        docDate = Invoice_sh.Range("A" & I - 1).Value
+        netdDate = Invoice_sh.Range("G" & I - 1).Value
+        
+        Payment_sh.Select
+        For p = 2 To sPayment_lr + 1
+            
+            payDate = Payment_sh.Range("A" & p).Value
+            payAmt = Payment_sh.Range("I" & p).Value
+            payIn_deff = Abs(iIamt + payAmt)
+            
+            If payDate >= docDate And payDate >= netdDate And payIn_deff <= 30 Then
+                    Payment_sh.Range("L" & p).Value = payIn_deff
+                    Payment_sh.Rows(p).Copy
+                    Invoice_sh.Select
+                    Range("A" & I).PasteSpecial xlPasteValuesAndNumberFormats
+                    
+                    Rows(I).Font.Bold = False
+                    Rows(I + 1).Insert shift:=xlDown
+                    Range("I" & I).Select
+                    
+                    For sumB = I To 1 Step -1
+                      InvBold = Application.WorksheetFunction.Sum(Range("I" & I & ":I" & sumB))
+                        If Abs(InvBold) = payIn_deff Then
+                            Range("I" & I & ":I" & sumB).Font.Bold = True
+                            Range("M" & I & ":M" & sumB).Value = "Matched"
+                            Exit For
+                        End If
+                    Next
+                    Payment_sh.Select
+                    Rows(p).Select
+                    Rows(p).Delete
+            End If
+            
+        Next
+    End If
+Next
+
+
+
+Payment_sh.Select
+myPayment_lr = Payment_sh.Range("H" & Rows.Count).End(xlUp).Row
+ 
+ For ct = 2 To myPayment_lr
+    Payment_sh.Select
+    py_ItemsDT = Payment_sh.Range("A" & 2).Value
+
+    Invoice_sh.Select
+    xInvoice_lr = Invoice_sh.Range("H" & Rows.Count).End(xlUp).Row
+    For xIt = 2 To xInvoice_lr
+        In_ItemsDT = Invoice_sh.Range("A" & xIt).Value
+        In_Match = Invoice_sh.Range("M" & xIt).Value
+        txt_doc = Invoice_sh.Range("D" & xIt).Value
+        
+        If py_ItemsDT <= In_ItemsDT And In_Match = "Matched" And xIt = 2 And txt_doc <> "DZ" Then
+           Payment_sh.Rows(2).Copy
+           Invoice_sh.Rows(xIt).Insert shift:=xlDown
+           Invoice_sh.Range("A" & xIt).PasteSpecial xlPasteValuesAndNumberFormats
+           Application.CutCopyMode = False
+           Invoice_sh.Rows(xIt + 1).Insert shift:=xlDown
+           Payment_sh.Select
+           Rows(2).Delete
+           Invoice_sh.Select
+           Exit For
+        End If
+        
+        If py_ItemsDT <= In_ItemsDT And In_Match = "" And txt_doc <> "DZ" Then
+           Payment_sh.Rows(2).Copy
+           Invoice_sh.Select
+           Invoice_sh.Rows(xIt).Insert shift:=xlDown
+           Invoice_sh.Range("A" & xIt).PasteSpecial xlPasteValuesAndNumberFormats
+           Application.CutCopyMode = False
+           Invoice_sh.Rows(xIt + 1).Insert shift:=xlDown
+           Payment_sh.Select
+           Rows(2).Delete
+           Invoice_sh.Select
+           Exit For
+        End If
+        
+        If py_ItemsDT <= In_ItemsDT And In_Match = "Matched" And txt_doc <> "DZ" Then
+           Invoice_sh.Select
+           If Invoice_sh.Range("M" & xIt).Value = "Matched" And Invoice_sh.Range("M" & xIt + 1).Value = "Matched" And Invoice_sh.Range("G" & xIt - 1).Value = "" Then
+           
+           Invoice_sh.Range("M" & xIt - 1).Select
+           Invoice_sh.Rows(xIt).Insert shift:=xlDown
+
+           Payment_sh.Rows(2).Copy
+           'Invoice_sh.Rows(xIt + 1).Insert shift:=xlDown
+           Invoice_sh.Range("A" & xIt).PasteSpecial xlPasteValuesAndNumberFormats
+           Invoice_sh.Rows(xIt + 1).Insert shift:=xlDown
+               
+           Application.CutCopyMode = False
+           Payment_sh.Select
+           Rows(2).Delete
+           Invoice_sh.Select
+           
+           Exit For
+           End If
+        End If
+            
+            
+    Next
+    
+ Next
+ Invoice_sh.Select
+ ActiveSheet.AutoFilterMode = False
+ activeLR = Range("G" & Rows.Count).End(xlUp).Row
+ Range("A1:Z" & activeLR).AutoFilter field:=11, Criteria1:="<>", Operator:=xlFilterValues
+ end_lr = Range("H" & Rows.Count).End(xlUp).Row
+ If end_lr >= 2 Then Range("H2:H" & end_lr).SpecialCells(xlCellTypeVisible).EntireRow.ClearContents
+ ActiveSheet.AutoFilterMode = False
+    
+    Cells.Select
+    Selection.ClearOutline
+    Range("A1").Select
+    Range("A1:Z80000").Font.Size = 9
+    Invoice_sh.Range("L1").Value = "Checks"
+    Invoice_sh.Range("M1").Value = "Open/Matched"
+    
+    end_lr = Invoice_sh.Range("H" & Rows.Count).End(xlUp).Row
+    
+    Invoice_sh.Range("A1:Z" & activeLR).AutoFilter field:=13, Criteria1:="<>Matched", Operator:=xlFilterValues
+    Invoice_sh.Range("A1:Z" & activeLR).AutoFilter field:=8, Criteria1:="<>", Operator:=xlFilterValues
+    Invoice_sh.Range("A1:Z" & activeLR).AutoFilter field:=4, Criteria1:="<>DZ", Operator:=xlFilterValues
+    
+    end_lr = Range("H" & Rows.Count).End(xlUp).Row
+    If end_lr >= 2 Then Range("M2:M" & end_lr).SpecialCells(xlCellTypeVisible).Value = "Open-IN"
+    ActiveSheet.AutoFilterMode = False
+    
+    
+    Invoice_sh.Range("A1:Z" & activeLR).AutoFilter field:=13, Criteria1:="", Operator:=xlFilterValues
+    Invoice_sh.Range("A1:Z" & activeLR).AutoFilter field:=8, Criteria1:="<>", Operator:=xlFilterValues
+    Invoice_sh.Range("A1:Z" & activeLR).AutoFilter field:=4, Criteria1:="DZ", Operator:=xlFilterValues
+    
+    end_lr = Range("H" & Rows.Count).End(xlUp).Row
+    If end_lr >= 2 Then Range("M2:M" & end_lr).SpecialCells(xlCellTypeVisible).Value = "Open-PY"
+    ActiveSheet.AutoFilterMode = False
+    
+    Invoice_sh.Range("A1:Z" & activeLR).AutoFilter field:=13, Criteria1:="Matched", Operator:=xlFilterValues
+    'Invoice_sh.Range("A1:Z" & activeLR).AutoFilter field:=8, Criteria1:="<>", Operator:=xlFilterValues
+    Invoice_sh.Range("A1:Z" & activeLR).AutoFilter field:=4, Criteria1:="<>DZ", Operator:=xlFilterValues
+    
+    end_lr = Range("H" & Rows.Count).End(xlUp).Row
+    If end_lr >= 2 Then Range("M2:M" & end_lr).SpecialCells(xlCellTypeVisible).Value = "Matched-IN"
+    ActiveSheet.AutoFilterMode = False
+    
+    Invoice_sh.Range("A1:Z" & activeLR).AutoFilter field:=13, Criteria1:="Matched", Operator:=xlFilterValues
+    'Invoice_sh.Range("A1:Z" & activeLR).AutoFilter field:=8, Criteria1:="<>", Operator:=xlFilterValues
+            Invoice_sh.Range("A1:Z" & activeLR).AutoFilter field:=4, Criteria1:="DZ", Operator:=xlFilterValues
+    
+    end_lr = Range("G" & Rows.Count).End(xlUp).Row
+    If end_lr >= 2 Then Range("M2:M" & end_lr).SpecialCells(xlCellTypeVisible).Value = "Matched-PY"
+    ActiveSheet.AutoFilterMode = False
+     
+    Range("H:H").Font.Bold = False
+    Columns("A:Z").AutoFit
+    Payment_sh.Range("A1:Z1").Copy
+    Invoice_sh.Range("A1").PasteSpecial xlPasteValues
+    Payment_sh.Delete
+    Invoice_sh.Name = "Final"
+        reconWB.Sheets("Final").Range("L1").Value = "Checks"
+        reconWB.Sheets("Final").Range("M1").Value = "Open/Matched"
+        
+        sh_Final_lr = Range("A" & Rows.Count).End(xlUp).Row
+        Range("A" & sh_Final_lr + 1 & ":A" & sh_Final_lr + 10000).EntireRow.Delete
+        
+        Dim pvt As Workbook
+        Dim PT As PivotTable
+        Dim ptCache As PivotCache
+        Dim ptRange As Range
+        Dim ptFinal_R As Variant
+        Dim ptFinal_C As Variant
+        
+        reconWB.Sheets("Final").Select
+        
+        ptFinal_R = reconWB.Sheets("Final").Range("A" & Rows.Count).End(xlUp).Row
+        ptFinal_C = reconWB.Sheets("Final").Cells(1, Columns.Count).End(xlToLeft).Column
+        
+        Set ptRange = reconWB.Sheets("Final").Cells(1, 1).Resize(ptFinal_R, ptFinal_C)
+        Set ptCache = ActiveWorkbook.PivotCaches.Add(SourceType:=xlDatabase, SourceData:=ptRange)
+        Set PT = ptCache.CreatePivotTable(tabledestination:=reconWB.Sheets("Summary").Range("B5"), tablename:="RconSummary")
+        
+        PT.AddFields ColumnFields:="Open/Matched"
+        On Error Resume Next
+        With PT.PivotFields("Open/Matched")
+                
+            .PivotItems("(blank)").Visible = False
+            
+        End With
+        
+        With PT.PivotFields("Amount")
+            .Orientation = xlDataField
+            .Function = xlCount
+            .Position = 1
+        End With
+        With PT.PivotFields("Amount")
+            .Orientation = xlDataField
+            .Function = xlSum
+            .Position = 2
+        End With
+        
+    'Calculation of end time
+      MinutesElapsed = Format((Timer - StartTime) / 86400, "hh:mm:ss")
+
+    'Notify user in seconds
+    MsgBox "The task is successfully completed in " & MinutesElapsed & " minutes" & Chr(10) & "Please do the QC and proceed..", vbInformation, "RA Recon - Utility"
+        
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+    Application.CutCopyMode = False
+    
+End Sub
+
+
