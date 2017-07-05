@@ -1,0 +1,405 @@
+#Find all Sheets Name Code
+--------------------------------------------------------------------------------------------------
+Sub FnGetSheetsName()
+
+Dim mainworkBook As Workbook
+
+Set mainworkBook = ActiveWorkbook
+
+For i = 1 To mainworkBook.Sheets.Count
+
+'Either we can put all names in an array , here we are printing all the names in Sheet 2
+
+mainworkBook.Sheets("Sheet2").Range("A" & i) = mainworkBook.Sheets(i).Name
+
+Next i
+
+End Sub
+--------------------------------------------------------------------------------------------------
+# Add worksheets....
+
+Sub AddWorksheet()
+
+Worksheets.Add().Name = "MySheet"
+
+End Sub
+
+Sub AddAsLastWorksheet()
+
+Worksheets.Add (After:=Worksheets(Worksheets.Count)).Name = "MySheet"
+
+End Sub
+--------------------------------------------------------------------------------------------------
+Sub PMT()
+
+Dim myLast_R As Integer
+Dim mylast_C As Integer
+Dim ccListR As Range
+Dim lookUP_Budget_Data As Variant
+Dim lookUP_Chamdor_Actual As Variant
+--------------------------------------------------------------------------------------------------
+Sub Macro1()
+'
+' Macro1 Macro
+'
+
+'
+    Sheets("BACKUP").Select
+    Cells.Select
+    Selection.ClearContents
+    Range("A8").Select
+    ActiveSheet.OLEObjects.Add(Filename:= _
+        "D:\My Project\myTesting\Journal request DH11F16278S3000 - DH11F16282S7000.msg" _
+        , Link:=False, DisplayAsIcon:=True, IconFileName:= _
+        "C:\windows\system32\packager.dll", IconIndex:=0, IconLabel:= _
+        "D:\My Project\myTesting\Journal request DH11F16278S3000 - DH11F16282S7000.msg" _
+        ).Select
+    ActiveSheet.Shapes("Object 1").IncrementLeft 213
+    ActiveSheet.Shapes("Object 1").IncrementTop 0.75
+    Range("E8").Select
+End Sub
+
+Dim PivotTableName As PivotTable
+Dim shBrandPivot As Worksheet
+Dim shCurrentWeek As Worksheet
+Dim shPriorWeek As Worksheet
+Dim shPivot As Worksheet
+Dim lr As Long
+Dim rng As Range
+
+On Error Resume Next
+
+ActiveWorkbook.Sheets("MIS-TAB").Select
+
+'Input files
+Actual_Dump = ActiveWorkbook.Sheets("MIS-TAB").Range("B3").Value
+'Input files Store location
+
+Actual_Dump_Dir = ActiveWorkbook.Sheets("MIS-TAB").Range("C3").Value
+'OutPut files
+
+SPD_Temp = ActiveWorkbook.Sheets("MIS-TAB").Range("D3").Value
+'OutPut files Store location
+SPD_Temp_Dir = ActiveWorkbook.Sheets("MIS-TAB").Range("E3").Value
+'Open raw data file
+
+Workbooks.Open Filename:=Actual_Dump_Dir & "\" & Actual_Dump & ".xlsx"
+Workbooks.Open Filename:=SPD_Temp_Dir & "\" & SPD_Temp & ".xls"
+
+Workbooks(Actual_Dump & ".xlsx").Activate
+
+ActiveWorkbook.Sheets("ELDP").Select
+
+PromoName = Sheets("ELDP").Range("D7").Value
+District = Sheets("ELDP").Range("D12").Value
+CostCentre = Sheets("ELDP").Range("D17").Value
+
+If Sheets("ELDP").Range("G27").Value <> "" Then
+Range("G:G").EntireColumn.Insert
+Range("H:H").EntireColumn.Insert
+Range("N:N").EntireColumn.Insert
+Else
+MsgBox "Rows already inserted"
+End If
+
+With ActiveSheet
+    myLast_R = .Cells(.Rows.Count, "C").End(xlUp).Row
+End With
+
+If myLast_R - 27 <= 7 Then
+Workbooks(SPD_Temp & ".xls").Activate
+ActiveWorkbook.Sheets("input").Select
+
+Sheets("input").Range("D7").Value = PromoName
+Sheets("input").Range("D12").Value = District
+Sheets("input").Range("D17").Value = CostCentre
+
+Workbooks(Actual_Dump & ".xlsx").Activate
+
+Range("C28:O" & myLast_R).Select
+Selection.Copy
+Workbooks(SPD_Temp & ".xls").Activate
+Range("C28").Select
+    Selection.PasteSpecial Paste:=xlPasteValuesAndNumberFormats, Operation:=xlNone, SkipBlanks:=True, Transpose:=False
+Application.CutCopyMode = False
+Else
+
+Workbooks(SPD_Temp & ".xls").Activate
+ActiveWorkbook.Sheets("input").Select
+
+For i = 34 To myLast_R
+Range("A" & i).EntireRow.Insert
+Next
+Workbooks(SPD_Temp & ".xls").Activate
+ActiveWorkbook.Sheets("input").Select
+
+Sheets("input").Range("D7").Value = PromoName
+Sheets("input").Range("D12").Value = District
+Sheets("input").Range("D17").Value = CostCentre
+
+Workbooks(Actual_Dump & ".xlsx").Activate
+
+Range("C28:O" & myLast_R).Select
+Selection.Copy
+Workbooks(SPD_Temp & ".xls").Activate
+Range("C28").Select
+    Selection.PasteSpecial Paste:=xlPasteValuesAndNumberFormats, Operation:=xlNone, SkipBlanks:=True, Transpose:=False
+Application.CutCopyMode = False
+
+    Range("C28:O28").Select
+    Selection.Copy
+    Range("C29:O" & myLast_R).Select
+    Selection.PasteSpecial Paste:=xlPasteFormats, Operation:=xlNone, _
+        SkipBlanks:=False, Transpose:=False
+    Application.CutCopyMode = False
+
+End If
+For j = 28 To myLast_R + (myLast_R - 29)
+If j Mod 2 = 0 Then
+Range("A" & j + 1).EntireRow.Insert
+Range("C27:O27").Select
+Selection.Copy
+Range("C" & j + 1).Select
+ActiveSheet.Paste
+Application.CutCopyMode = False
+Else
+
+End If
+Next
+
+Sheets("input").Range("E27").Value = "Brand Code"
+Sheets("input").Range("L27").Value = "LSC Code"
+ActiveWorkbook.Sheets("Updated JE ").Select
+Rows("10:11").Select
+Selection.Copy
+For k = 1 To (myLast_R - 29) * 2
+If k Mod 2 = 0 Then
+Range("A" & 12 + k).Select
+ActiveSheet.Paste
+
+Else
+Range("A" & 11 + k).Select
+ActiveSheet.Paste
+
+End If
+Next
+Application.CutCopyMode = False
+Range("C2").Select
+Workbooks(SPD_Temp & ".xls").Activate
+ActiveWorkbook.Sheets("input").Select
+With ActiveSheet
+    mySPD_TempLR = .Cells(.Rows.Count, "C").End(xlUp).Row
+End With
+Workbooks(Actual_Dump & ".xlsx").Activate
+
+    Cells.Find(What:="Approved", After:=ActiveCell, LookIn:=xlFormulas, _
+        LookAt:=xlPart, SearchOrder:=xlByRows, SearchDirection:=xlNext, _
+        MatchCase:=False, SearchFormat:=False).Activate
+
+myActivecellR = ActiveCell.Row
+myActivecellC = ActiveCell.Column
+ActiveWorkbook.Sheets("ELDP").Select
+Range("A" & myActivecellR & ":Z" & myActivecellR + 300).Select
+Selection.Copy
+Workbooks(SPD_Temp & ".xls").Activate
+ActiveWorkbook.Sheets("input").Select
+Range("A" & mySPD_TempLR + 5).Select
+ActiveSheet.Paste
+Application.CutCopyMode = False
+Range("A1").Select
+Workbooks(Actual_Dump & ".xlsx").Activate
+ActiveWorkbook.Close
+MsgBox "Your File Done!!! Please save this according to your location."
+'NewName = Application.GetSaveAsFilename
+'ActiveWorkbook.SaveAs Filename:=NewName.xls
+End Sub
+
+
+ ----------------------------------------------------------------------------------------------------------------------
+
+Sub concatinate()
+
+Dim mystr As String
+For i = 1 To 5
+'Brewing = WorksheetFunction.CountIf(Range("I:I"), "Brewing")
+mystr = mystr & Range("J" & 7 + i).Value & " (" & Range("K" & 7 + i).Value & ")" & Chr(10)
+Next
+Range("O5").Value = mystr
+
+End Sub
+--------------------------------------------------------------------------------------------
+
+'Delete Blank rows
+For i = 1 To myLast_R
+blank_R = ActiveWorkbook.Sheets(1).Range("C" & 1 + (i - i)).Value
+    If blank_R = "" Then
+    ActiveWorkbook.Sheets(1).Range("C" & 1 + (i - i)).Select
+    ActiveCell.EntireRow.Select
+    Selection.Delete
+    Else
+        k = 1
+    Do Until ActiveWorkbook.Sheets(1).Range("C" & k).Value = ""
+       k = k + 1
+       
+    myActivecellR = ActiveCell.Row
+    myActivecellC = ActiveCell.Column
+    Loop
+    ActiveWorkbook.Sheets(1).Cells(myActivecellR + 1, myActivecellC).Columns.Select
+    End If
+Next
+'Delete Blank Columns
+For J = 1 To mylast_C
+blank_C = ActiveWorkbook.Sheets(1).Cells(0 + J).Value
+    If blank_C = "" Then
+    ActiveWorkbook.Sheets(1).Columns(0 + J).Select
+    'ActiveCell.EntireRow.Select
+    Selection.Delete
+    Else
+    End If
+Next
+----------------------------------------------------------------------------------------------------
+
+Sub Macro1()
+'
+' Macro1 Macro
+'
+
+'
+    Range("E1").Select
+    Selection.AutoFilter
+    ActiveSheet.Range("$A$1:$L$378").AutoFilter Field:=4, Criteria1:=Array( _
+        "Fixed Term Contract", "Permanent Disability", "Temporary Disability"), Operator _
+        :=xlFilterValues
+    Rows("44:44").Select
+    Range("D44").Activate
+    Range(Selection, Selection.End(xlDown)).Select
+    Selection.Delete Shift:=xlUp
+    Range("D1").Select
+    Selection.AutoFilter
+End Sub
+
+-----------------------------------------------------------------------------------------------------------
+
+Sub filen()
+    Dim parts() As String
+    Dim Inputfolder As String, a As String
+        'Takes input as any file on disk
+        Inputfolder = Application.GetOpenFilename("Folder, *")
+        parts = Split(Inputfolder, "\")
+        a = parts(UBound(parts()))
+    MsgBox ("File is: " & a)
+End Sub
+
+-----------------------------------------------------------------------------------------------------------------
+
+Sub STartmy()
+
+Dim inputFile_Count, i, j As Integer
+Dim outputFile_Count As Integer
+Dim outputFile_Name(4), inputFile_Name(100)  As String
+Dim outputFile_FName(4), inputFile_Find_TXT1_name(100)  As String
+Dim outputFile_LName(4)   As String
+Dim outputFile_FindName(10) As Integer
+Dim outputFileLen As Integer
+Dim outputFile_Find_TXT1_Name(10) As Integer
+Dim outputFile_Find_TXT2_Name(10) As Integer
+Dim midTXT1, midTXT2 As String
+Dim inputFile_LEN(100) As Integer
+Dim inputFile_Find_Text1_name(100) As String
+Dim inputOpenFile_Name(100) As String
+On Error Resume Next
+inputFile_Count = ActiveWorkbook.Sheets("MIS-TAB").Range("B" & 100).End(xlUp).Row
+outputFile_Count = ActiveWorkbook.Sheets("MIS-TAB").Range("F" & 100).End(xlUp).Row
+MIS_File = ActiveWorkbook.Sheets("File Manager").Range("C7").Value
+
+For i = 1 To outputFile_Count - 2
+outputFile_Name(i) = ActiveWorkbook.Sheets("MIS-TAB").Range("F" & 2 + i).Value
+outputFile_FName(i) = Left(outputFile_Name(i), 11)
+outputFile_Find_TXT1_Name(i) = Application.WorksheetFunction.Find("THO", outputFile_Name(i), 1)
+outputFile_Find_TXT2_Name(i) = Application.WorksheetFunction.Find("DWL", outputFile_Name(i), 1)
+midTXT1 = Mid(outputFile_Name(i), outputFile_Find_TXT1_Name(i), 3)
+midTXT2 = Mid(outputFile_Name(i), outputFile_Find_TXT2_Name(i), 3)
+
+If outputFile_FName(i) = "Distributor" And midTXT1 = "THO" And midTXT2 = "DWL" Then
+Workbooks.Open Filename:=ActiveWorkbook.Sheets("MIS-TAB").Range("G" & 2 + i).Value
+Workbooks(ActiveWorkbook.Sheets("MIS-TAB").Range("G" & 2 + i).Value).Activate
+ActiveWorkbook.Sheets("831006 9030 DWL").Select
+Range("B4:D60000").Select
+Selection.Clear
+Range("F4:H60000").Select
+Selection.Clear
+ActiveWorkbook.Sheets("831005 9110 THO").Select
+Range("B4:D60000").Select
+Selection.Clear
+Range("F4:H60000").Select
+Selection.Clear
+        
+    For j = 1 To inputFile_Count - 2
+    Workbooks(MIS_File).Activate
+    inputFile_Name(j) = ActiveWorkbook.Sheets("MIS-TAB").Range("B" & 2 + j).Value
+    inputFile_LEN(j) = Len(inputFile_Name(j))
+    inputFile_Find_Text1_name(j) = Application.WorksheetFunction.Find(".", inputFile_Name(j), 1)
+    inputOpenFile_Name(j) = Left(inputFile_Name(j), inputFile_LEN(j) - (inputFile_LEN(j) - inputFile_Find_Text1_name(j) + 1))
+    Next
+    
+    For l = 1 To 8
+    h = inputOpenFile_Name(l)
+    If h = "831005_THO" Then
+    Workbooks.Open Filename:=ActiveWorkbook.Sheets("MIS-TAB").Range("G" & 2 + i).Value
+
+    End If
+
+Else
+
+
+
+End If
+
+Next
+
+
+End Sub
+---------------------------------------------------------------------------------------------------------------------------------------
+
+Sub Macro1()
+'
+' Macro1 Macro
+'
+
+'
+    Cells.Select
+    Selection.AutoFilter
+    Range("H1").Select
+    ActiveSheet.Range("$A$1:$AB$46").AutoFilter Field:=8, Criteria1:="="
+    Rows("2:2").Select
+    Range("H2").Activate
+    Range(Selection, Selection.End(xlDown)).Select
+    Selection.Delete Shift:=xlUp
+    Range("H1").Select
+    Selection.AutoFilter
+    Rows("1:1").Select
+    Range("H1").Activate
+    Selection.Delete Shift:=xlUp
+    Range("H1").Select
+End Sub
+
+-------------------------------------------------------------------------------------------------------------------------------------------
+
+'start time
+StartTime = Timer
+
+'end time Calculation
+MinutesElapsed = Format((Timer - StartTime) / 86400, "hh:mm:ss")
+MsgBox "Your Activity is successfully completed in :" & Chr(10) & MinutesElapsed & " minutes"
+
+-------------------------------------------------------------------------------------------------------------------------------------------
+
+
+    bFile = Application.GetOpenFilename("Excel Files(*.xls*),*.xls*", Title:="Select Your Base Data File !!!")
+    
+    If bFile <> False Then
+        Workbooks.Open Filename:=bFile
+        Set BaseData = ActiveWorkbook
+    Else
+
+Columns("A:A").TextToColumns , xlDelimited, , False, False, False, True, False, False
