@@ -1,0 +1,37 @@
+Option Explicit
+ 
+Sub ListAppointments()
+     
+    Dim olApp As Object
+    Dim olNS As Object
+    Dim olFolder As Object
+    Dim olApt As Object
+    Dim NextRow As Long
+     
+    Set olApp = CreateObject("Outlook.Application")
+     
+    Set olNS = olApp.GetNamespace("MAPI")
+     
+    Set olFolder = olNS.GetDefaultFolder(9) 'olFolderCalendar
+    Worksheets("Data").Select
+    Cells.Clear
+    Range("A1:D1").Value = Array("Subject", "Start", "End", "Location")
+     
+    NextRow = 2
+     
+    For Each olApt In olFolder.Items
+        Cells(NextRow, "A").Value = olApt.Subject
+        Cells(NextRow, "B").Value = olApt.Start
+        Cells(NextRow, "C").Value = olApt.End
+        Cells(NextRow, "D").Value = olApt.Location
+        NextRow = NextRow + 1
+    Next olApt
+     
+    Set olApt = Nothing
+    Set olFolder = Nothing
+    Set olNS = Nothing
+    Set olApp = Nothing
+     
+    Columns.AutoFit
+     
+End Sub
