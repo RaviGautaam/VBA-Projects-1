@@ -1,0 +1,493 @@
+Sub Generate_Report()
+    ' Created by Santhosh Manjunath, Bangalore Team
+    
+    ' Create a copy of tab
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = False
+    
+    Dim StartTime As Double
+    Dim MinutesElapsed As String
+
+    'Selecting a data file
+    On Error Resume Next
+    MsgBox "Select a AR Recon data file from the folder", vbInformation, "AR Recon - Utility"
+    tFile = Application.GetOpenFilename("Excel Files(*.xls*),*.xls*")
+    Workbooks.Open tFile
+    
+    With tFile
+        .Title = "Select a data file"
+        .AllowMultiSelect = False
+        
+    If tFile = False Then
+        MsgBox "File is not Selected...", vbCritical, "AR Recon -  Utility"
+        Exit Sub
+    End If
+    End With
+
+    'QC
+    
+    If Range("A1").End(xlDown).Row < 6 Then
+        MsgBox "Selected wrong file... Please choose correct file by opening the Utility file again..", vbCritical, "AR Recon - Utility"
+        Exit Sub
+    End If
+    
+    If Range("A20000").End(xlUp).Row < 2 Then
+        MsgBox "Selected wrong file... Please choose correct file by opening the Utility file again..", vbCritical, "AR Recon - Utility"
+        Exit Sub
+    End If
+    
+    'Remember start time
+    StartTime = Timer
+
+    On Error Resume Next
+    Sheets("Final").Select
+    If ActiveSheet.Name = "Final" Then
+        ActiveSheet.Delete
+    End If
+    
+    ActiveSheet.Copy After:=Sheets(1)
+    ActiveSheet.Name = "Final"
+                
+    ' Groupting of data
+    Columns("A:K").EntireColumn.AutoFit
+    Range("A1:K" & Range("A1").End(xlDown).Row).Select
+    Selection.Subtotal GroupBy:=7, Function:=xlSum, TotalList:=Array(11), Replace:=True, SummaryBelowData:=True
+    Cells.Copy
+    Range("A1").PasteSpecial Paste:=xlPasteValues
+    Application.CutCopyMode = False
+    
+    ' Clear values which are updated 0
+    Range("A1:K" & Range("A30000").End(xlUp).Row).AutoFilter
+    ActiveSheet.Range("$A$1:$K$" & Range("A30000").End(xlUp).Row).AutoFilter Field:=11, Criteria1:="<>"
+    ActiveSheet.Range("$A$2:$K$" & Range("G30000").End(xlUp).Row).Select
+    Selection.SpecialCells(xlCellTypeVisible).Select
+    Selection.ClearContents
+    Selection.AutoFilter
+    Cells.ClearOutline
+    Cells(1, 1).Select
+    
+    'Arrange the data as per document numbers
+    
+    Let x = Range("A30000").End(xlUp).Row
+    
+    For i = 2 To x + 100
+    
+        If Cells(i, 3).Value <> "" And Cells(i + 1, 3).Value <> "" And Cells(i - 1, 3).Value = "" Then
+
+            Let y = Range("C" & i).End(xlDown).Row
+            Let xInvoice = ""
+            
+            For j = i To y
+            
+                If Cells(j, 2).Value <> "" Then
+                    Let xInvoice = Cells(j, 2).Value
+                    Let j = y
+                End If
+                
+            Next
+                
+            For k = i To y
+            
+                If Cells(k, 3).Value = xInvoice Then
+                    If k <> i Then
+                        Rows(k & ":" & k).Cut
+                        Rows(i & ":" & i).Select
+                        Selection.Insert Shift:=xlDown
+                        Application.CutCopyMode = False
+                        Let k = y
+                        Let i = y
+                    End If
+                End If
+            Next
+        End If
+    Next
+    
+    Cells(1, 1).Select
+    
+    'Arrange the data as per document numbers-Payments
+    
+    Let x = Range("A30000").End(xlUp).Row
+    
+    For i = 2 To x + 100
+    
+        If Cells(i, 2).Value <> "" And Cells(i, 2).Value <> Cells(i - 1, 3).Value Then
+            Let xInvoice = Cells(i, 2).Value
+            
+            For k = 2 To y
+            
+                If Cells(k, 3).Value = xInvoice Then
+                        Rows(i & ":" & i).Cut
+                        Rows(k + 1 & ":" & k + 1).Select
+                        Selection.Insert Shift:=xlDown
+                        Application.CutCopyMode = False
+                        Let k = y
+                        Let xInvoice = ""
+                End If
+                
+                If k = y - 1 Then
+                Let xinvice = ""
+                End If
+                
+            Next
+        End If
+    Next
+    
+    Cells(1, 1).Select
+    
+    
+    
+    'separation of payment groups
+    
+    Let x = Range("A30000").End(xlUp).Row
+    
+    For i = 2 To x + 100
+    
+        If Cells(i, 4).Value = "DZ" And Cells(i - 1, 4).Value = "DZ" Then
+            Rows(i & ":" & i).Insert Shift:=xlDown
+            Let i = i + 1
+            Let x = x + 1
+        End If
+    Next
+    
+    Let x = Range("A30000").End(xlUp).Row
+    For i = 2 To x + 100
+    
+        If Cells(i, 4).Value = "Z2" And Cells(i + 1, 4).Value = "" And Cells(i + 2, 4).Value = "Z2" Then
+            Rows(i + 1 & ":" & i + 1).Delete Shift:=xlUp
+        End If
+    Next
+    
+    Let x = Range("A30000").End(xlUp).Row
+    For i = 2 To x + 100
+        If Cells(i, 4).Value = "Z2" And Cells(i + 1, 4).Value = "" And Cells(i - 1, 4).Value = "" And Cells(i + 2, 4).Value = "DZ" Then
+            Rows(i + 1 & ":" & i + 1).Delete Shift:=xlUp
+        End If
+    Next
+    
+    ' Placing the Payments after invoice by refering invoice number
+    
+    Let x = Range("A30000").End(xlUp).Row
+    
+    For i = 2 To x + 100
+    
+        If Cells(i, 2).Value <> "" And Cells(i, 2).Value <> Cells(i - 1, 3).Value Then
+            Let iRef = Cells(i, 2).Value
+            
+            For j = 2 To x
+                If Cells(j, 3).Value = iRef Then
+                    Rows(i & ":" & i).Cut
+                    Rows(j + 1 & ":" & j + 1).Select
+                    Selection.Insert Shift:=xlDown
+                    Application.CutCopyMode = False
+                    Let j = x
+                    Let iRef = ""
+                    Cells(1, 1).Select
+                End If
+            Next
+        End If
+        
+    Next
+    
+    ' Separation of line items if we have invoice and payments in the group - Top
+    
+    Let x = Range("A30000").End(xlUp).Row
+    
+    For i = 2 To x + 100
+    
+        If Cells(i, 2).Value <> "" And Cells(i, 2).Value = Cells(i - 1, 3).Value Then
+            If Cells(i, 9).Value = -1 * Cells(i - 1, 9).Value Then
+                If Cells(i - 2, 3).Value <> "" Then
+                    Rows(i - 1 & ":" & i - 1).Select
+                    Selection.Insert Shift:=xlDown
+                End If
+            End If
+        End If
+    Next
+    
+    ' Separation of line items if we have invoice and payments in the group - Bottom
+    
+    Let x = Range("A30000").End(xlUp).Row
+    
+    For i = 2 To x + 100
+    
+        If Cells(i, 2).Value <> "" And Cells(i, 2).Value = Cells(i - 1, 3).Value Then
+            If Cells(i, 9).Value = -1 * Cells(i - 1, 9).Value Then
+                If Cells(i + 1, 3).Value <> "" Then
+                    Rows(i + 1 & ":" & i + 1).Select
+                    Selection.Insert Shift:=xlDown
+                End If
+            End If
+        End If
+    Next
+    
+    
+    ' Match the invoice values Vs payments
+    
+    Let x = Range("A30000").End(xlUp).Row
+    
+    For i = 2 To x + 100
+    
+        If Cells(i, 4).Value = "Z2" And Cells(i + 1, 3).Value <> "" And Cells(i - 1, 3).Value = "" Then
+    
+            Let y = Range("C" & i).End(xlDown).Row
+            Let xInv = 0
+            Let xPay = 0
+            
+            For j = i To y
+            
+                If Cells(j, 4).Value = "Z2" Then
+                    Let xInv = xInv + Cells(j, 9).Value
+                End If
+                
+                If Cells(j + 1, 4).Value = "" And Cells(j + 2, 4).Value = "DZ" Then
+                    If Cells(j, 9).Value <> -1 * Cells(j - 1, 9).Value Then
+                        Rows(j + 1 & ":" & j + 1).Delete Shift:=xlUp
+                        Let xPay = xPay + Cells(j + 1, 9).Value
+                        Let y = y + 2
+                        Let x = x - 1
+                        
+                        If Cells(j + 2, 4).Value <> "" Then
+                            Rows(j + 2 & ":" & j + 2).Select
+                            Selection.Insert Shift:=xlDown
+                        End If
+                    End If
+                End If
+                
+                If xPay <> 0 And Abs(xInv + xPay) < 30 Then
+                    Range("I" & i & ":" & "I" & Range("C" & i).End(xlDown).Row).Font.Bold = True
+                    Range("L" & Range("C" & i).End(xlDown).Row).Value = Abs(xInv + xPay)
+                    Let j = y
+                End If
+                
+                If xPay <> 0 And Abs(xInv + xPay) > 30 And Cells(j + 3, 4).Value = "DZ" Then
+                    Rows(j + 2 & ":" & j + 2).Delete Shift:=xlUp
+                    Let xPay = xPay + Cells(j + 2, 9).Value
+                    Let x = x - 1
+                    
+                    If Abs(xInv + xPay) < 30 Then
+                        Range("I" & i & ":" & "I" & Range("C" & i).End(xlDown).Row).Font.Bold = True
+                        Range("L" & Range("C" & i).End(xlDown).Row).Value = Abs(xInv + xPay)
+                        Let j = y
+                    End If
+                    
+                End If
+                
+                If Cells(j, 4).Value = "Z2" And Cells(j - 1, 4).Value = "" And Cells(j + 2, 4).Value = "" And Cells(j + 1, 4).Value = "DZ" Then
+                        If Abs(Cells(j, 9).Value + Cells(j + 1, 9).Value) < 30 Then
+                            Range("I" & j & ":" & "I" & j + 1).Font.Bold = True
+                            Range("L" & j + 1).Value = Abs(Cells(j, 9).Value + Cells(j + 1, 9).Value)
+                         End If
+                End If
+                
+                If Cells(j, 2).Value <> "" And Cells(j, 2).Value = Cells(j - 1, 3).Value Then
+                    If Cells(j, 9).Value = -1 * Cells(j - 1, 9).Value Then
+                        If Cells(j - 2, 3).Value = "" And Cells(j + 1, 3).Value = "" Then
+                            Range("I" & j & ":" & "I" & j - 1).Font.Bold = True
+                            Range("L" & j).Value = Abs(Cells(j, 9).Value + Cells(j - 1, 9).Value)
+                        End If
+                    End If
+                End If
+
+                
+            Next
+        End If
+    Next
+    ' Check for other then Z2
+    
+    Let x = Range("A30000").End(xlUp).Row
+    
+    For i = 2 To x + 100
+    
+        If Cells(i, 4).Value <> "Z2" And Left(Cells(i, 4).Value, 1) = "Z" And Cells(i + 1, 3).Value = "" And Cells(i - 1, 3).Value = "" Then
+            Let xValue = -1 * Cells(i, 9).Value
+            For j = 2 To x
+                If Cells(j, 9).Value = xValue And Cells(j, 9).Font.Bold = False Then
+                    If Cells(j, 3).Value <> Cells(j - 1, 2).Value And Cells(j, 3).Value <> Cells(j + 1, 2).Value Then
+                       If Cells(j, 2).Value = "" Then
+                        If Cells(j, 3).Value <> Cells(j - 1, 2).Value And Cells(j, 3).Value <> Cells(j + 1, 2).Value Then
+                        Let Cells(j, 9).Font.Bold = True
+                        Let Cells(j, 12).Value = 0
+                        Let Cells(j, 13).Value = "Check"
+                        Rows(j & ":" & j).Cut
+                        Rows(i & ":" & i).Select
+                        Selection.Insert Shift:=xlDown
+                        Application.CutCopyMode = False
+                        Let Cells(i, 9).Font.Bold = True
+                        Let j = x
+                        Let xValue = 0
+                        Cells(1, 1).Select
+                        End If
+                       
+                        Else
+                        
+                        If Cells(j, 2).Value <> Cells(j - 1, 3).Value And Cells(j, 2).Value <> Cells(j + 1, 3).Value Then
+                        Let Cells(j, 9).Font.Bold = True
+                        Let Cells(j, 12).Value = 0
+                        Let Cells(j, 13).Value = "Check"
+                        Rows(j & ":" & j).Cut
+                        Rows(i & ":" & i).Select
+                        Selection.Insert Shift:=xlDown
+                        Application.CutCopyMode = False
+                        Let Cells(i, 9).Font.Bold = True
+                        Let j = x
+                        Let xValue = 0
+                        Cells(1, 1).Select
+                        
+                        
+                       End If
+                      End If
+                    End If
+                End If
+            Next
+        End If
+        
+    Next
+    
+    'Checking for payment items which are not matched
+    Let x = Range("A30000").End(xlUp).Row
+    
+    For i = 2 To x + 100
+        
+        If Cells(i, 4).Value = "DZ" And Cells(i, 4).Value <> "" And Cells(i, 9).Font.Bold = False Then
+            Let xValue = -1 * Cells(i, 9).Value
+            Let yDate = Cells(i, 1).Value
+            For j = 2 To x
+                      
+                If Left(Cells(j, 4).Value, 1) = "Z" And xDate = 0 And Cells(j, 1).Value <= yDate Then
+                    If xDate <> Cells(j, 1).Value Then
+                    If Cells(j, 9).Font.Bold = False Then
+                    Let xDate = Cells(j, 1).Value
+                    Let yValue = Cells(j, 9).Value
+                    Let fRow = j
+                    End If
+                    End If
+                Else
+                    If Left(Cells(j, 4).Value, 1) = "Z" And Cells(j, 1).Value <= yDate And xDate = Cells(j, 1).Value And Cells(j, 9).Font.Bold = False Then
+                    Let yValue = yValue + Cells(j, 9).Value
+                    End If
+                End If
+                
+                If xDate <> 0 Then
+                    If yDate - Cells(j, 1).Value <= 90 Then
+                    If Cells(j, 3).Value <> Cells(j - 1, 2).Value And Cells(j, 3).Value <> Cells(j + 1, 2).Value Then
+                    If Abs(xValue - yValue) < 30 Then
+                    Let Cells(i, 9).Font.Bold = True
+                    Let Cells(i, 12).Value = Abs(xValue - yValue)
+                    Let Cells(i, 13).Value = "Check"
+                    Range("I" & fRow & ":I" & j).Font.Bold = True
+                    Rows(fRow & ":" & fRow).Insert
+                    Rows(fRow + 1 & ":" & j + 1).Cut
+                    Rows(i + 1 & ":" & i + 1).Select
+                    Selection.Insert Shift:=xlUp
+                    Application.CutCopyMode = False
+                    
+                    Let j = x
+                    Let yValue = ""
+                    Let xDate = 0
+                    Let xValue = 0
+                    Cells(1, 1).Select
+                    End If
+                    End If
+                    End If
+                End If
+                
+                If Left(Cells(j, 4).Value, 1) = "Z" And xDate <> Cells(j + 1, 1).Value And Cells(j, 9).Font.Bold = False Then
+                    Let yValue = ""
+                    Let xDate = 0
+                End If
+                
+            Next
+        End If
+        
+    Next
+    
+    ' Set gap to unmached items
+    Let x = Range("A30000").End(xlUp).Row
+    
+    For i = 2 To x + 100
+        
+        If Cells(i, 4).Value <> "" And Cells(i + 1, 4).Value <> "" And Cells(i, 9).Font.Bold = False And Cells(i + 1, 9).Font.Bold = True Then
+            Rows(i + 1 & ":" & i + 1).Insert
+        End If
+            
+        If Cells(i, 4).Value <> "" And Cells(i - 1, 4).Value <> "" And Cells(i, 9).Font.Bold = False And Cells(i - 1, 9).Font.Bold = True Then
+            Rows(i & ":" & i).Insert
+        End If
+    
+    Next
+        
+    ' Cleaning extra rows
+    Let x = Range("A30000").End(xlUp).Row
+    
+    For i = 2 To x
+        
+        If Cells(i, 1).Value = "" And Cells(i, 9).Value = "" And Cells(i + 1, 1).Value = "" Then
+            Rows(i & ":" & i).Delete Shift:=xlUp
+        End If
+            
+    Next
+    
+    Let x = Range("A30000").End(xlUp).Row
+    
+    For i = 2 To x
+        
+        If Cells(i, 1).Value = "" And Cells(i, 9).Value = "" And Cells(i + 1, 1).Value = "" Then
+            Rows(i & ":" & i).Delete Shift:=xlUp
+        End If
+            
+    Next
+        
+    ' Sorting based on dates
+    Let x = Range("A30000").End(xlUp).Row
+    
+    For i = 2 To x + 100
+        
+        If Cells(i, 1).Value <> "" And Cells(i - 1, 4).Value = "" Then
+            Let xDate = Cells(i, 1).Value
+        
+            For j = i + 2 To x
+                If Cells(j, 1).Value <> "" And Cells(j - 1, 4).Value = "" And Cells(j, 1).Value < xDate Then
+                    
+                    If Cells(j + 1, 4).Value <> "" Then
+                    
+                        Rows(j & ":" & Range("A" & j).End(xlDown).Row + 1).Cut
+                        Rows(i & ":" & i).Select
+                        Selection.Insert Shift:=xlDown
+                        Application.CutCopyMode = False
+                        Let j = x
+                        Let xDate = ""
+                    
+                    Else
+                    
+                        Rows(j & ":" & j + 1).Cut
+                        Rows(i & ":" & i).Select
+                        Selection.Insert Shift:=xlDown
+                        Application.CutCopyMode = False
+                        Let j = x
+                        Let xDate = ""
+                    
+                    End If
+                    
+                End If
+            Next
+            
+        End If
+            
+    Next
+        
+        
+        
+    Cells(1, 1).Select
+        
+    'Calculation of end time
+      MinutesElapsed = Format((Timer - StartTime) / 86400, "hh:mm:ss")
+
+    'Notify user in seconds
+    MsgBox "The task is successfully completed in " & MinutesElapsed & " minutes" & Chr(10) & "Please do the QC and proceed..", vbInformation, "RA Recon - Utility"
+    
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+    Application.CutCopyMode = False
+    
+End Sub
+
