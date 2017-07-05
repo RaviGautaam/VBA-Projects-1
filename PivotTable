@@ -1,0 +1,45 @@
+Dim pvtRange As Range
+Dim pvtCache As PivotCache
+Dim pvtTable As PivotTable
+Dim f_Row As Variant
+Dim f_Col As Variant
+Dim baseWS As Worksheet
+Dim pvtWS As Worksheet
+
+    Set baseWS = Worksheets("Base Data")
+    Set pvtWS = Worksheets("Pivot Data Analysis")
+    baseWS.Range("A1").Select
+    f_Row = baseWS.Cells(Rows.Count, 1).End(xlUp).Row
+    f_Col = baseWS.Cells(1, Columns.Count).End(xlToLeft).Column
+    Set pvtRange = baseWS.Cells(1, 1).Resize(20000, f_Col)
+        pvtWS.Select
+        Columns("A:AZ").Delete
+        baseWS.Select
+    Set pvtCache = ActiveWorkbook.PivotCaches.Add(SourceType:=xlDatabase, SourceData:=pvtRange)
+    Set pvtTable = pvtCache.CreatePivotTable(tabledestination:=pvtWS.Range("A5"), tableName:="myPT")
+    pvtTable.AddFields RowFields:=Array("Owner", "Status"), ColumnFields:="Ageing From Creation Date"
+    'ptTable.PivotFields("Type").Orientation = xlPageField
+    'PivotFields("DayOfWeek").Orientation = xlPageField
+
+    With pvtTable.PivotFields("Document Id")
+        .Orientation = xlDataField
+        .Function = xlCount
+        .Position = 1
+    End With
+    With pvtTable.PivotFields("Type")
+        .Orientation = xlPageField
+        
+    End With
+
+'###### for Pivot Refresh
+    Workbooks(nWorkingFile).Activate
+    baseWS.Select
+    Range("A1").Select
+    Selection.CurrentRegion.Select
+
+    DataArea = "Base Data!R1C1:R" & Selection.Rows.Count & "C" & Selection.Columns.Count
+    pvtWS.Select
+        ActiveSheet.PivotTables("myPT").ChangePivotCache ActiveWorkbook. _
+        PivotCaches.Create(SourceType:=xlDatabase, SourceData:=DataArea, _
+        Version:=xlPivotTableVersion14)
+'###### End Pivot Refresh
