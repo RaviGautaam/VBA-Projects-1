@@ -1,0 +1,428 @@
+Sub Final_Spot_report()
+
+Dim b_L_Row As Variant
+Dim l_Col As Variant
+Dim myDate As Variant
+Dim autoF As AutoFilter
+Dim lookup_File As String
+Dim file_Dir_path As String
+Dim Macro_Enable_File_Name As String
+Dim lookup_Cell As Variant
+Dim lookup_Cell2 As Variant
+Dim lookup_Cell3 As Variant
+Dim lookup_Cell4 As Variant
+Dim lookup_Cell5 As Variant
+
+Dim lookup_LR1 As Variant
+Dim lookup_LR2 As Variant
+
+Dim dowonRowNo As Variant
+
+On Error Resume Next
+
+Macro_Enable_File_Name = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("I3").Value
+
+'#SUPPORTING FILES
+paymentExe = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("B3").Value
+mappingPlants = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("B4").Value
+debitBalanceBaseData = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("B5").Value
+processingDump = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("B6").Value
+uploadDump = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("B7").Value
+spotDump = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("B8").Value
+ZMIR6Dump = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("B9").Value
+QueryStatusD = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("B10").Value
+VendorNdiscount = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("B11").Value
+
+
+'#SUPPORTING FILES DRIVES PATHS
+paymentExeDIR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("C3").Value
+mappingPlantsDIR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("C4").Value
+debitBalanceBaseDataDIR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("C5").Value
+processingDumpDIR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("C6").Value
+uploadDumpDIR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("C7").Value
+spotDumpDIR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("C8").Value
+ZMIR6DumpDIR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("C9").Value
+QueryStatusDIR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("C10").Value
+VendorNdiscountDIR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("C11").Value
+
+'#SPOT REPORTING FILES
+debitbalanceR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("F3").Value
+uploadR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("F4").Value
+processingR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("F5").Value
+spotR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("F6").Value
+discountlossR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("F7").Value
+zmr6R = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("F8").Value
+
+'#SPOT REPORTING FILES DRIVES PATHS
+
+debitbalanceDIR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("G3").Value
+uploadDIR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("G4").Value
+processingDIR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("G5").Value
+spotDIR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("G6").Value
+discountlossDIR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("G7").Value
+zmr6DIR = ActiveWorkbook.Sheets("Macro Analysis Tab").Range("G8").Value
+
+Workbooks.Open Filename:=spotDIR & "\" & spotR & ".xlsx"
+
+ActiveWorkbook.Sheets("Spot Report").Select
+ActiveSheet.AutoFilterMode = False
+    
+    Cells.Select
+    Selection.ClearContents
+
+Workbooks(spotR & ".xlsx").Activate
+
+Workbooks.Open Filename:=spotDumpDIR & "\" & spotDump & ".xlsx"
+ActiveWorkbook.Sheets("SPOT-Raw Data ").Select
+
+With ActiveSheet
+        b_L_Row = .Cells(.Rows.Count, "A").End(xlUp).Row
+End With
+
+ActiveSheet.AutoFilterMode = False
+
+Range("A1:aZ" & b_L_Row).Select
+Selection.Copy
+Workbooks(spotR & ".xlsx").Activate
+Range("A1").Select
+
+ActiveSheet.Paste
+
+If ActiveWorkbook.Sheets("Spot Report").Range("L1").Value = "Profit Center" Then
+MsgBox "Column Already Inserted!!!"
+ElseIf ActiveWorkbook.Sheets("Spot Report").Range("L1").Value = "" Then
+MsgBox "Column Already Inserted!!!"
+Else
+ActiveWorkbook.Sheets("Spot Report").Range("L1").Select
+    Columns("L:L").Insert Shift:=xlToRight, _
+      CopyOrigin:=xlFormatFromLeftOrAbove
+    Columns("N:N").Insert Shift:=xlToRight, _
+      CopyOrigin:=xlFormatFromLeftOrAbove
+    Columns("O:O").Insert Shift:=xlToRight, _
+      CopyOrigin:=xlFormatFromLeftOrAbove
+
+End If
+
+ActiveWorkbook.Sheets("Spot Report").Range("L1").Value = "Name 1"
+ActiveWorkbook.Sheets("Spot Report").Range("N1").Value = "Payment Term Explanations"
+ActiveWorkbook.Sheets("Spot Report").Range("O1").Value = "Discount"
+ActiveWorkbook.Sheets("Spot Report").Range("Y1").Value = "Assignment Date"
+ActiveWorkbook.Sheets("Spot Report").Range("Z1").Value = "***"
+ActiveWorkbook.Sheets("Spot Report").Range("AA1").Value = "RK"
+ActiveWorkbook.Sheets("Spot Report").Range("AB1").Value = "Invoice Receipt Date for D Payment  Mrthod documents only"
+ActiveWorkbook.Sheets("Spot Report").Range("AC1").Value = "Purchasing Document"
+ActiveWorkbook.Sheets("Spot Report").Range("AD1").Value = "Requsitioner"
+ActiveWorkbook.Sheets("Spot Report").Range("AE1").Value = "PO creator user ID"
+ActiveWorkbook.Sheets("Spot Report").Range("AF1").Value = "actual Net due date(For discounted docs - Payments date, for others - Net due date)"
+ActiveWorkbook.Sheets("Spot Report").Range("AG1").Value = "actual net due date-clearing date"
+ActiveWorkbook.Sheets("Spot Report").Range("AH1").Value = "ADD/ODD/BDD"
+ActiveWorkbook.Sheets("Spot Report").Range("AI1").Value = "Plnt"
+ActiveWorkbook.Sheets("Spot Report").Range("AJ1").Value = "Segment No."
+ActiveWorkbook.Sheets("Spot Report").Range("AK1").Value = "Region"
+ActiveWorkbook.Sheets("Spot Report").Range("AL1").Value = "Genpact Team"
+ActiveWorkbook.Sheets("Spot Report").Range("AM1").Value = "Tower"
+ActiveWorkbook.Sheets("Spot Report").Range("AN1").Value = "Team"
+ActiveWorkbook.Sheets("Spot Report").Range("AO1").Value = "Payment Term Days Invoice date and Net due Date"
+ActiveWorkbook.Sheets("Spot Report").Range("AP1").Value = "less than 7 days"
+ActiveWorkbook.Sheets("Spot Report").Range("AQ1").Value = "% of Early payment=Actual net Due date - Clearing date"
+ActiveWorkbook.Sheets("Spot Report").Range("AR1").Value = "Invoice to Pay(Clearing- Baseline)"
+ActiveWorkbook.Sheets("Spot Report").Range("AS1").Value = "Ready to Post (Invoice to Post)(Posting date- Doc Date)"
+ActiveWorkbook.Sheets("Spot Report").Range("AT1").Value = "PO Cycle Time(net due date- doc date)"
+ActiveWorkbook.Sheets("Spot Report").Range("AU1").Value = "Payment Cycle Time"
+ActiveWorkbook.Sheets("Spot Report").Range("AV1").Value = "Weighted Average on Invoice Value - PO Cycle"
+ActiveWorkbook.Sheets("Spot Report").Range("AW1").Value = "Weighted Average on Invoice Value - Payment Cycle"
+ActiveWorkbook.Sheets("Spot Report").Range("AX1").Value = "POT"
+ActiveWorkbook.Sheets("Spot Report").Range("AY1").Value = "Doc Received Date(Upload Date)"
+ActiveWorkbook.Sheets("Spot Report").Range("AZ1").Value = "Invoice date to Receipt time(Doc date to baseline date)"
+ActiveWorkbook.Sheets("Spot Report").Range("BA1").Value = "Receipt to Posting Time(Baseline to post)"
+ActiveWorkbook.Sheets("Spot Report").Range("BB1").Value = "Posting to Pay(Posting to clearing)"
+ActiveWorkbook.Sheets("Spot Report").Range("BC1").Value = "Doc Date to Clearing Date"
+ActiveWorkbook.Sheets("Spot Report").Range("BD1").Value = "Baseline to Upload Date"
+ActiveWorkbook.Sheets("Spot Report").Range("BE1").Value = "Doc date to Posting"
+ActiveWorkbook.Sheets("Spot Report").Range("BF1").Value = "Cycle time on the basis of Upload and posting"
+ActiveWorkbook.Sheets("Spot Report").Range("BG1").Value = "Cycle time on the basis of Doc date to Upload Date"
+ActiveWorkbook.Sheets("Spot Report").Range("BH1").Value = "DELAY IN SCANNING DOCS Diff of upload and Baseline"
+ActiveWorkbook.Sheets("Spot Report").Range("BI1").Value = "Delay In Posting Docs (Difference in Upload and Posting)"
+ActiveWorkbook.Sheets("Spot Report").Range("BJ1").Value = "Comments"
+
+
+With ActiveSheet
+        l_Row = .Cells(.Rows.Count, "A").End(xlUp).Row
+End With
+
+
+Workbooks.Open Filename:=VendorNdiscountDIR & "\" & VendorNdiscount & ".xlsx"
+Workbooks(VendorNdiscount & ".xlsx").Activate
+
+Workbooks.Open Filename:=ZMIR6DumpDIR & "\" & ZMIR6Dump & ".xlsx"
+Workbooks(ZMIR6Dump & ".xlsx").Activate
+
+Workbooks.Open Filename:=uploadDIR & "\" & uploadR & ".xlsx"
+Workbooks(uploadR & ".xlsx").Activate
+Sheets("Upload Report").Select
+
+Workbooks.Open Filename:=mappingPlantsDIR & "\" & mappingPlants & ".xlsx"
+Workbooks(mappingPlants & ".xlsx").Activate
+Sheets("Plants").Select
+
+
+
+Workbooks(spotR & ".xlsx").Activate
+
+'Columns("A:A").TextToColumns , xlDelimited, , False, False, False, True, False, False
+Columns("B:B").TextToColumns , xlDelimited, , False, False, False, True, False, False
+Columns("F:F").TextToColumns , xlDelimited, , False, False, False, True, False, False
+Columns("K:K").TextToColumns , xlDelimited, , False, False, False, True, False, False
+Columns("K:K").TextToColumns , xlDelimited, , False, False, False, True, False, False
+Columns("T:T").TextToColumns , xlDelimited, , False, False, False, True, False, False
+
+
+
+ActiveWorkbook.Sheets("Spot Report").Range("L2").Formula = "=IFERROR((VLOOKUP(K2,'[Vendor Name & Discount Terms.xlsx]Vendor lists'!$A:$E,2,FALSE)),""Vendor Name not in Vendor list file"")"
+
+ActiveWorkbook.Sheets("Spot Report").Range("L2").Select
+ActiveWorkbook.Sheets("Spot Report").Range("L2:L" & l_Row).FillDown
+ActiveWorkbook.Sheets("Spot Report").Range("L2:L" & l_Row).Select
+Selection.Copy
+Selection.PasteSpecial Paste:=xlPasteValues, Operation:=xlNone, SkipBlanks:=False, Transpose:=False
+Application.CutCopyMode = False
+
+
+ActiveWorkbook.Sheets("Spot Report").Range("N2").Value = "=IFERROR((VLOOKUP($M2,'[Vendor Name & Discount Terms.xlsx]Discount Terms'!$A:$E,2,FALSE)),""Payment term not found"")"
+ActiveWorkbook.Sheets("Spot Report").Range("O2").Value = "=IFERROR((VLOOKUP($M2,'[Vendor Name & Discount Terms.xlsx]Discount Terms'!$A:$E,3,FALSE)),""Payment term not found"")"
+
+ActiveWorkbook.Sheets("Spot Report").Range("N2:O2").Select
+ActiveWorkbook.Sheets("Spot Report").Range("N2:O" & l_Row).FillDown
+ActiveWorkbook.Sheets("Spot Report").Range("N2:O" & l_Row).Select
+Selection.Copy
+Selection.PasteSpecial Paste:=xlPasteValues, Operation:=xlNone, SkipBlanks:=False, Transpose:=False
+Application.CutCopyMode = False
+
+ActiveWorkbook.Sheets("Spot Report").Range("Y2").Formula = "=MID(S2,5,2)&""/""&RIGHT(S2,2)&""/""&LEFT(S2,4)"
+ActiveWorkbook.Sheets("Spot Report").Range("AA2").Formula = "=IFERROR((LEFT(W2,10)),0)"
+ActiveWorkbook.Sheets("Spot Report").Range("AB2").Formula = "=IFERROR((VLOOKUP($T2,'[ZMIR6.xlsx]SAP Dump for ZMIR6'!$A:$Z,23,FALSE)),0)"
+ActiveWorkbook.Sheets("Spot Report").Range("AC2").Formula = "=IFERROR((VLOOKUP($T2,'[ZMIR6.xlsx]SAP Dump for ZMIR6'!$A:$Z,6,FALSE)),0)"
+ActiveWorkbook.Sheets("Spot Report").Range("AD2").Formula = "=IFERROR((VLOOKUP($T2,'[ZMIR6.xlsx]SAP Dump for ZMIR6'!$A:$Z,15,FALSE)),0)"
+ActiveWorkbook.Sheets("Spot Report").Range("AE2").Formula = "=IFERROR((VLOOKUP($T2,'[ZMIR6.xlsx]SAP Dump for ZMIR6'!$A:$Z,15,FALSE)),0)"
+ActiveWorkbook.Sheets("Spot Report").Range("AF2").Formula = "=IF(O2=""N"",H2,I2)"
+ActiveWorkbook.Sheets("Spot Report").Range("AG2").Formula = "=AF2-Q2"
+ActiveWorkbook.Sheets("Spot Report").Range("AH2").Formula = "=IF(AG2<0,""ADD"",IF(AG2=0,""ODD"",""BDD""))"
+ActiveWorkbook.Sheets("Spot Report").Range("AI2").Formula = "=IFERROR((VLOOKUP($T2,'[Upload Report.xlsx]Upload Report'!$A:$AS,38,FALSE)),""Savvion ID not Found"")"
+
+ActiveWorkbook.Sheets("Spot Report").Range("Y2:AI2").Select
+ActiveWorkbook.Sheets("Spot Report").Range("Y2:AI" & l_Row).FillDown
+ActiveWorkbook.Sheets("Spot Report").Range("Y2:AI" & l_Row).Select
+Selection.Copy
+Selection.PasteSpecial Paste:=xlPasteValues, Operation:=xlNone, SkipBlanks:=False, Transpose:=False
+Application.CutCopyMode = False
+
+Workbooks(spotR & ".xlsx").Activate
+    
+    Columns("AB:AB").Select
+    Selection.NumberFormat = "d-mmm-yy"
+    Columns("AF:AF").Select
+    Selection.NumberFormat = "d-mmm-yy"
+    Columns("AG:AG").Select
+    Selection.NumberFormat = "0"
+
+Columns("AI:AI").TextToColumns , xlDelimited, , False, False, False, True, False, False
+
+'@
+ActiveWorkbook.Sheets("Spot Report").Range("AJ2").Formula = "=IFERROR((VLOOKUP($AI2,'[Mapping of plants.xlsx]Plants'!$A:$I,3,FALSE)),""Plant ID not Found"")"
+ActiveWorkbook.Sheets("Spot Report").Range("AK2").Formula = "=IFERROR((VLOOKUP($AI2,'[Mapping of plants.xlsx]Plants'!$A:$I,4,FALSE)),""Plant ID not Found"")"
+ActiveWorkbook.Sheets("Spot Report").Range("AL2").Formula = "=IFERROR((VLOOKUP($AI2,'[Mapping of plants.xlsx]Plants'!$A:$I,6,FALSE)),""Plant ID not Found"")"
+ActiveWorkbook.Sheets("Spot Report").Range("AM2").Formula = "=IFERROR((VLOOKUP($AI2,'[Mapping of plants.xlsx]Plants'!$A:$I,8,FALSE)),""Plant ID not Found"")"
+ActiveWorkbook.Sheets("Spot Report").Range("AN2").Formula = "=IFERROR((VLOOKUP($K2,'[Mapping of plants.xlsx]VENDOR LIST'!$A:$C,2,FALSE)),""Vendor No. not Found"")"
+ActiveWorkbook.Sheets("Spot Report").Range("AO2").Formula = "=H2-D2"
+ActiveWorkbook.Sheets("Spot Report").Range("AP2").Formula = "=IF(AO2<=6,""TRUE"",""FALSE"")"
+ActiveWorkbook.Sheets("Spot Report").Range("AQ2").Formula = "=AG2"
+ActiveWorkbook.Sheets("Spot Report").Range("AR2").Formula = "=NETWORKDAYS(V2,Q2)-1"
+ActiveWorkbook.Sheets("Spot Report").Range("AS2").Formula = "=NETWORKDAYS(D2,J2)-1"
+ActiveWorkbook.Sheets("Spot Report").Range("AT2").Formula = "=NETWORKDAYS(D2,H2)-1"
+ActiveWorkbook.Sheets("Spot Report").Range("AU2").Formula = "=AR2"
+ActiveWorkbook.Sheets("Spot Report").Range("AV2").Formula = "=AT2*E2"
+ActiveWorkbook.Sheets("Spot Report").Range("AW2").Formula = "=AU2*E2"
+
+ActiveWorkbook.Sheets("Spot Report").Range("AJ2:AW2").Select
+ActiveWorkbook.Sheets("Spot Report").Range("AJ2:AW" & l_Row).FillDown
+ActiveWorkbook.Sheets("Spot Report").Range("AJ2:AW" & l_Row).Select
+Selection.Copy
+Selection.PasteSpecial Paste:=xlPasteValues, Operation:=xlNone, SkipBlanks:=False, Transpose:=False
+Application.CutCopyMode = False
+
+'@
+ActiveWorkbook.Sheets("Spot Report").Range("AY2").Formula = "=VLOOKUP($T2,'[Upload Report.xlsx]Upload Report'!$A:$AS,7,FALSE)"
+ActiveWorkbook.Sheets("Spot Report").Range("AZ2").Formula = "=NETWORKDAYS(D2,V2)-1"
+ActiveWorkbook.Sheets("Spot Report").Range("BA2").Formula = "=NETWORKDAYS(V2,J2)-1"
+ActiveWorkbook.Sheets("Spot Report").Range("BB2").Formula = "=NETWORKDAYS(J2,Q2)-1"
+ActiveWorkbook.Sheets("Spot Report").Range("BC2").Formula = "=NETWORKDAYS(D2,Q2)-1"
+ActiveWorkbook.Sheets("Spot Report").Range("BD2").Formula = "=NETWORKDAYS(V2,AY2)-1"
+ActiveWorkbook.Sheets("Spot Report").Range("BE2").Formula = "=NETWORKDAYS(D2,J2)-1"
+ActiveWorkbook.Sheets("Spot Report").Range("BF2").Formula = "=NETWORKDAYS(AY2,J2)-1"
+ActiveWorkbook.Sheets("Spot Report").Range("BG2").Formula = "=NETWORKDAYS(D2,AY2)-1"
+ActiveWorkbook.Sheets("Spot Report").Range("BH2").Formula = "=NETWORKDAYS(AY2,V2)-1"
+ActiveWorkbook.Sheets("Spot Report").Range("BI2").Formula = "=NETWORKDAYS(AY2,J2)-1"
+'ActiveWorkbook.Sheets("Spot Report").Range("BG2").Formula = "=NETWORKDAYS(D2,AY2)-1"
+'ActiveWorkbook.Sheets("Spot Report").Range("BG2").Formula = "=NETWORKDAYS(D2,AY2)-1"
+
+ActiveWorkbook.Sheets("Spot Report").Range("AY2:BI2").Select
+ActiveWorkbook.Sheets("Spot Report").Range("AY2:BI" & l_Row).FillDown
+ActiveWorkbook.Sheets("Spot Report").Range("AY2:BI" & l_Row).Select
+Selection.Copy
+Selection.PasteSpecial Paste:=xlPasteValues, Operation:=xlNone, SkipBlanks:=False, Transpose:=False
+Application.CutCopyMode = False
+
+Range("A1").Select
+
+'.....AutoFilter for Document Number Start with *16000 and Delete
+Range("1:1").Select
+Selection.AutoFilter
+
+ActiveSheet.Range("$A$1:$BZ$" & l_Row).AutoFilter Field:=14, Criteria1:= _
+        "=*immediate*", Operator:=xlAnd
+
+dowonRowNo = ActiveSheet.AutoFilter.Range.Offset(1).SpecialCells(xlCellTypeVisible).Row
+Range("AH" & dowonRowNo).Value = "Immediate"
+Range("AH" & dowonRowNo).Select
+Range(Selection, Selection.End(xlDown)).Select
+Selection.SpecialCells(xlCellTypeVisible).Rows.FillDown
+ActiveSheet.AutoFilterMode = FalseActiveSheet.AutoFilterMode = False
+Rows("1:1").Select
+Selection.AutoFilter
+'.....Deletion done................................................
+
+'.....AutoFilter for Document Number Start with *16000 and Delete
+'Range("1:1").Select
+'Selection.AutoFilter'
+
+'ActiveSheet.Range("$A$1:$AM$" & l_Row).AutoFilter Field:=7, Criteria1:= _
+'        "=REDWOOD", Operator:=xlAnd'
+'
+'dowonRowNo = ActiveSheet.AutoFilter.Range.Offset(1).SpecialCells(xlCellTypeVisible).Row
+'Range("a" & dowonRowNo).Select
+'ActiveCell.EntireRow.Select
+'Range(Selection, Selection.End(xlDown)).Select
+'Selection.Delete
+'ActiveSheet.AutoFilterMode = False
+'Rows("1:1").Select
+'Selection.AutoFilter
+'.....Deletion done................................................
+
+'Workbooks(Macro_Enable_File_Name & ".xlsm").Activate 'Give the name for activate the workbook
+
+ActiveWorkbook.Sheets("Spot Report").Range("AX2").Formula = "=IF(AH2=""ADD"",""N"",""Y"")"
+ActiveWorkbook.Sheets("Spot Report").Range("AX2").Select
+ActiveWorkbook.Sheets("Spot Report").Range("AX2:AX" & l_Row).FillDown
+ActiveWorkbook.Sheets("Spot Report").Range("AX2:AX" & l_Row).Select
+Selection.Copy
+Selection.PasteSpecial Paste:=xlPasteValues, Operation:=xlNone, SkipBlanks:=False, Transpose:=False
+Application.CutCopyMode = False
+
+
+
+
+Workbooks(VendorNdiscount & ".xlsx").Activate
+ActiveWorkbook.Close
+
+Workbooks(ZMIR6Dump & ".xlsx").Activate
+ActiveWorkbook.Close
+
+Workbooks(mappingPlants & ".xlsx").Activate
+ActiveWorkbook.Close
+
+Workbooks(uploadR & ".xlsx").Activate
+ActiveWorkbook.Close
+
+Workbooks(spotDump & ".xlsx").Activate
+ActiveWorkbook.Close
+
+
+Rows("1:1").Select
+    Selection.Font.Bold = True
+    Cells.Select
+    With Selection.Font
+        .Name = "Calibri"
+        .Size = 9
+        .Strikethrough = False
+        .Superscript = False
+        .Subscript = False
+        .OutlineFont = False
+        .Shadow = False
+        .Underline = xlUnderlineStyleNone
+        .ThemeColor = xlThemeColorLight1
+        .TintAndShade = 0
+        .ThemeFont = xlThemeFontMinor
+    End With
+    
+    Columns("Y:BI").Select
+    With Selection.Interior
+        .PatternColorIndex = xlAutomatic
+        .Color = 65535
+        .TintAndShade = 0
+        .PatternTintAndShade = 0
+        Selection.ColumnWidth = 15
+    End With
+    
+'Rows("1:1").Select
+'Selection.AutoFilter
+'Range("W1").Select
+'ActiveSheet.Range("$A$1:$BZ$" & l_Row).AutoFilter Field:=23, Criteria1:=Array("Not Found"), Operator:=xlFilterValues
+
+'dowonRowNo = ActiveSheet.AutoFilter.Range.Offset(1).SpecialCells(xlCellTypeVisible).Row
+'Range("W" & dowonRowNo).Formula = "=IFERROR((VLOOKUP(K2,'ZMIR6 DATA'!I:Z,12,FALSE)),""Not Found in ZMIR6"")"
+'ActiveWorkbook.Sheets("Processing Report").Range("w" & dowonRowNo).Select
+'Range(Selection, Selection.End(xlDown)).Select
+'Selection.SpecialCells(xlCellTypeVisible).Rows.FillDown
+'ActiveSheet.AutoFilterMode = False
+'Range("W:W").Select
+'Selection.Copy
+'Selection.PasteSpecial Paste:=xlPasteValues, Operation:=xlNone, SkipBlanks:=False, Transpose:=False
+'Application.CutCopyMode = False
+
+'ActiveSheet.Range("$A$1:$AZ$" & l_Row).AutoFilter Field:=23, Criteria1:=Array("Not Found", "Not Found in ZMIR6"), Operator:=xlFilterValues
+
+'ActiveWorkbook.Sheets("Processing Report").Range("w" & l_Row).FillDown'
+Range("X1").Select
+'MsgBox "Please Update your ZMIR6 TAB for the Plant IDs Not Found in Upload and ZMIR6..."
+'MsgBox "After update the TAB ZMIR6 RUN the Macro again for Processing Report..."
+
+ActiveWorkbook.Save
+ActiveWorkbook.Close
+
+End Sub
+------------------------------------------------------------------------------------
+
+Sub searhtest()
+
+
+
+Dim ws As Worksheet
+    Dim lRow As Long
+    Dim strSearch As String
+
+    '~~> Set this to the relevant worksheet
+    Set ws = ThisWorkbook.Worksheets("Chamdor Total")
+
+    '~~> Search Text
+    strSearch = "Disability"
+
+    With ws
+        '~~> Remove any filters
+        .AutoFilterMode = False
+
+        lRow = .Range("F" & .Rows.Count).End(xlUp).Row
+
+        With .Range("A1:Z" & lRow)
+            .AutoFilter Field:=6, Criteria1:="=*" & strSearch & "*"
+            .Offset(1, 0).SpecialCells(xlCellTypeVisible).EntireRow.Delete
+        End With
+
+        '~~> Remove any filters
+        .AutoFilterMode = False
+    End With
+End Sub
+
+----------------------------------------------------------------------------------------------------------------------
+ActiveSheet.Range("$A$1:$AM$" & l_Row).AutoFilter Field:=3, Criteria1:= _
+        "=*16000*", Operator:=xlAnd
+-----------------------------------------------------------------------------------------------------------------------
