@@ -1,0 +1,169 @@
+Sub ApprovalAgeing_DE()
+
+Dim lastRow As Long
+Dim Search As String
+Dim Replace As String
+Dim WS As Worksheet
+Dim EIN_Number As Variant
+Dim EIN_Number1 As Variant
+Dim Invoice_Amount As Variant
+Dim matriX1 As Variant
+Dim matriX2 As Variant
+Dim Limit_first_approval As Variant
+Dim Limit_second_approval As Variant
+Dim Limit_third_approval As Variant
+On Error Resume Next
+
+ActiveWorkbook.Sheets("Base Data").Select
+
+lastRow = ActiveWorkbook.Sheets("Base Data").Range("A" & Rows.Count).End(xlUp).Row
+
+Range("AW:BB").Select
+'Selection.ClearContents
+Selection.Delete
+
+Range("AW1") = "EIN Number"
+
+Range("AL2:AL" & lastRow).Select
+Selection.Copy
+Range("AW2").Select
+    Selection.PasteSpecial Paste:=xlPasteValues, _
+    Operation:=xlNone, SkipBlanks:=False, Transpose:=False
+    Range("AW2:AW" & lastRow).Select
+    Application.CutCopyMode = False
+    
+' replace "EIN"
+    Selection.Replace What:="EIN", Replacement:="", LookAt:=xlPart, _
+        SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False
+' replace "-"
+    Selection.Replace What:="-", Replacement:="", LookAt:=xlPart, _
+        SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False
+' replace "/"
+        Selection.Replace What:="/", Replacement:="", LookAt:=xlPart, _
+        SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False
+' replace " "
+        Selection.Replace What:=" ", Replacement:="", LookAt:=xlPart, _
+        SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False
+' replace "_"
+        Selection.Replace What:="_", Replacement:="", LookAt:=xlPart, _
+        SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False
+' replace "E"
+        Selection.Replace What:="E", Replacement:="", LookAt:=xlPart, _
+        SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False
+' replace "FR"
+'        Selection.Replace What:="FR", Replacement:="", LookAt:=xlPart, _
+'        SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+'        ReplaceFormat:=False
+' replace "BE"
+        Selection.Replace What:="BE", Replacement:="", LookAt:=xlPart, _
+        SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False
+' replace "EIJN"
+        Selection.Replace What:="EIJN", Replacement:="", LookAt:=xlPart, _
+        SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False
+' replace "B"
+        Selection.Replace What:="B", Replacement:="", LookAt:=xlPart, _
+        SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False
+' replace "IJN"
+        Selection.Replace What:="IJN", Replacement:="", LookAt:=xlPart, _
+        SearchOrder:=xlByRows, MatchCase:=False, SearchFormat:=False, _
+        ReplaceFormat:=False
+        
+Range("AX1") = "EIN Matched Not Matched"
+Range("AY1") = "First Approval limits"
+Range("AZ1") = "Second Approval limits"
+Range("BA1") = "Third Approval limits"
+Range("BB1") = "Approval Required"
+Range("AX2").Select
+
+
+
+Set mYrange1 = Sheets("FR10&FR50").Range("A:X")
+Set mYrange2 = Sheets("FR10&FR50").Range("B:X")
+
+For Start = 2 To lastRow
+
+matriX1 = Application.WorksheetFunction.VLookup(Range("AW" & Start), mYrange1, 1, False)
+matriX2 = Application.WorksheetFunction.VLookup(Range("AW" & Start), mYrange2, 1, False)
+
+EIN_Number = Worksheets("Base Data").Range("AW" & Start).Value
+
+If EIN_Number = 0 Then
+Sheets("Base Data").Range("AX" & Start).Value = "Blank no EIN"
+ElseIf EIN_Number = matriX1 Then
+Sheets("Base Data").Range("AX" & Start).Value = "EIN Matched"
+Sheets("Base Data").Range("AY" & Start).Value = Application.WorksheetFunction.VLookup(Range("AW" & Start), mYrange1, 6, False)
+Sheets("Base Data").Range("AZ" & Start).Value = Application.WorksheetFunction.VLookup(Range("AW" & Start), mYrange1, 9, False)
+Sheets("Base Data").Range("BA" & Start).Value = Application.WorksheetFunction.VLookup(Range("AW" & Start), mYrange1, 11, False)
+
+ElseIf EIN_Number = matriX2 Then
+Sheets("Base Data").Range("AX" & Start).Value = "EIN Matched"
+Sheets("Base Data").Range("AY" & Start).Value = Application.WorksheetFunction.VLookup(Range("AW" & Start), mYrange2, 5, False)
+Sheets("Base Data").Range("AZ" & Start).Value = Application.WorksheetFunction.VLookup(Range("AW" & Start), mYrange2, 8, False)
+Sheets("Base Data").Range("BA" & Start).Value = Application.WorksheetFunction.VLookup(Range("AW" & Start), mYrange2, 10, False)
+Else
+Sheets("Base Data").Range("AX" & Start).Value = "EIN Not Matched"
+End If
+Next
+
+For I = 2 To lastRow
+Set mY_range1 = Sheets("FR10&FR50").Range("A:X")
+Set mY_range2 = Sheets("FR10&FR50").Range("B:X")
+matriX_1 = Application.WorksheetFunction.VLookup(Range("AW" & I), mY_range1, 1, False)
+matriX_2 = Application.WorksheetFunction.VLookup(Range("AW" & I), mY_range2, 1, False)
+Invoice_Amount = Worksheets("Base Data").Range("R" & I).Value
+Limit_first_approval = Worksheets("Base Data").Range("AY" & I)
+Limit_second_approval = Worksheets("Base Data").Range("AZ" & I)
+Limit_third_approval = Worksheets("Base Data").Range("BA" & I)
+EIN_Number1 = Worksheets("Base Data").Range("AW" & I).Value
+
+
+If Invoice_Amount < 750 And Limit_first_approval >= 750 And EIN_Number1 = matriX_1 Then
+   Sheets("Base Data").Range("BB" & I).Value = Application.WorksheetFunction.VLookup(Range("AW" & I), mY_range1, 4, False) & " " & Application.WorksheetFunction.VLookup(Range("AW" & I), mY_range1, 3, False)
+   
+'   ElseIf Invoice_Amount < 750 And Limit_second_approval >= 750 And EIN_Number1 = matriX_1 Then
+'   Sheets("Base Data").Range("BB" & I).Value = Application.WorksheetFunction.VLookup(Range("AW" & I), mY_range1, 13, False)
+   
+'   ElseIf Invoice_Amount < 750 And Limit_third_approval >= 750 And EIN_Number1 = matriX_1 Then
+'   Sheets("Base Data").Range("BB" & I).Value = Application.WorksheetFunction.VLookup(Range("AW" & I), mY_range1, 17, False)
+   
+   ElseIf Invoice_Amount < 750 And Limit_first_approval >= 750 And EIN_Number1 = matriX_2 Then
+   Sheets("Base Data").Range("BB" & I).Value = Application.WorksheetFunction.VLookup(Range("AW" & I), mY_range2, 3, False) & " " & Application.WorksheetFunction.VLookup(Range("AW" & I), mY_range2, 2, False)
+   
+'   ElseIf Invoice_Amount < 750 And Limit_second_approval >= 750 And EIN_Number1 = matriX_2 Then
+'   Sheets("Base Data").Range("BB" & I).Value = Application.WorksheetFunction.VLookup(Range("AW" & I), mY_range2, 12, False)
+   
+'   ElseIf Invoice_Amount < 750 And Limit_third_approval >= 750 And EIN_Number1 = matriX_2 Then
+'   Sheets("Base Data").Range("BB" & I).Value = Application.WorksheetFunction.VLookup(Range("AW" & I), mY_range2, 16, False)
+   
+'   ElseIf Invoice_Amount > 750 And EIN_Number1 = matriX_1 Then
+'   Sheets("Base Data").Range("BB" & I).Value = "Invoice Value is >750"
+   
+   ElseIf Invoice_Amount > 750 Then
+   Sheets("Base Data").Range("BB" & I).Value = "Invoice Value is >750"
+Else
+Sheets("Base Data").Range("BB" & I).Value = "EIN not found"
+End If
+Next
+
+With Range("AW:BB").Font
+.ColorIndex = 9
+.Bold = True
+End With
+
+Range("BB1").Select
+
+End Sub
+
+.#####################################################################################################################################################################################################################################
+
+
+
