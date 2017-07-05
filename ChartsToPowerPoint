@@ -1,0 +1,112 @@
+Option Explicit
+
+'Both subs require a reference to Microsoft PowerPoint xx.x Object Library.
+'where xx.x is your office version (11.0 = 2003, 12.0 = 2007 and 14.0 = 2010).
+
+'Declaring the necessary Power Point variables (are used in both subs).
+Dim pptApp As PowerPoint.Application
+Dim pptPres As PowerPoint.Presentation
+Dim pptSlide As PowerPoint.Slide
+Dim pptSlideCount As Integer
+
+Sub ChartsToPowerPoint()
+
+    'Exports all the chart sheets to a new power point presentation.
+    'It also adds a text box with the chart title.
+    
+    'By Christos Samaras
+    'http://www.myengineeringworld.net
+    
+    Dim ws As Worksheet
+    Dim intChNum As Integer
+    Dim objCh As Object
+    
+    'Count the embedded charts.
+    For Each ws In ActiveWorkbook.Worksheets
+        intChNum = intChNum + ws.ChartObjects.Count
+    Next ws
+    
+    'Check if there are chart (embedded or not) in the active workbook.
+    If intChNum + ActiveWorkbook.Charts.Count < 1 Then
+        MsgBox "Sorry, there are no charts to export!", vbCritical, "Ops"
+        Exit Sub
+    End If
+    
+    'Open PowerPoint and create a new presentation.
+    Set pptApp = New PowerPoint.Application
+    Set pptPres = pptApp.Presentations.Add
+    
+    'Loop through all the embedded charts in all worksheets.
+    For Each ws In ActiveWorkbook.Worksheets
+        For Each objCh In ws.ChartObjects
+            Call pptFormat(objCh.Chart)
+        Next objCh
+    Next ws
+    
+    'Loop through all the chart sheets.
+    For Each objCh In ActiveWorkbook.Charts
+        Call pptFormat(objCh)
+    Next objCh
+    
+    'Show the power point.
+    pptApp.Visible = True
+
+    'Cleanup the objects.
+    Set pptSlide = Nothing
+    Set pptPres = Nothing
+    Set pptApp = Nothing
+    
+    'Infrom the user that the macro finished.
+    MsgBox "The charts were copied successfully to the new presentation!", vbInformation, "Done"
+    
+End Sub
+
+Private Sub pptFormat(xlCh As Chart)
+    
+    'Formats the charts/pictures and the chart titles/textboxes.
+    
+    'By Christos Samaras
+    'http://www.myengineeringworld.net
+    
+    Dim chTitle As String
+    Dim j As Integer
+    
+    On Error Resume Next
+   'Get the chart title and copy the chart area.
+    chTitle = xlCh.ChartTitle.Text
+    xlCh.ChartArea.Copy
+
+    'Count the slides and add a new one after the last slide.
+    pptSlideCount = pptPres.Slides.Count
+    Set pptSlide = pptPres.Slides.Add(pptSlideCount + 1, ppLayoutBlank)
+    
+    'Paste the chart and create a new textbox.
+    pptSlide.Shapes.PasteSpecial ppPasteJPG
+    If chTitle <> "" Then
+        pptSlide.Shapes.AddTextbox msoTextOrientationHorizontal, 12.5, 20, 694.75, 55.25
+    End If
+                    
+    'Format the picture and the textbox.
+    For j = 1 To pptSlide.Shapes.Count
+        With pptSlide.Shapes(j)
+            'Picture position.
+            If .Type = msoPicture Then
+                .Top = 50
+                .Left = 20
+                .Height = 350
+                .Width = 300
+            End If
+            'Text box position and formamt.
+            If .Type = msoTextBox Then
+                With .TextFrame.TextRange
+                    .ParagraphFormat.Alignment = ppAlignCenter
+                    .Text = chTitle
+                    .Font.Name = "Tahoma (Headings)"
+                    .Font.Size = 28
+                    .Font.Bold = msoTrue
+                End With
+            End If
+        End With
+    Next j
+
+End Sub
