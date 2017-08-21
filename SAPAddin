@@ -1,0 +1,3642 @@
+' Auto JE changes should be logged here for reference.
+' AutoJEVersion should be incremented and logged here for updates
+' V8.0  Bart Kraeger 4/1/2009 Add features to support COMMONSTORE linking of documents
+'       CreateSAPJournalEntry2 code is changed as the current version
+'       Create SM35 batch error session when cell A1 contains SM35; useful for debugging
+'       Return Sharepoint folder/filename from Z_POST_RECURRING_ENTRY2 and Z_POST_JE_CUSTADJ2 function calls
+'       Save spreadsheet in Sharepoint directory using the returned filename
+'       Post Sharepoint information in cell I2
+'       Put Add-In version information on the spreadsheet in cell H21
+'       Store Fiscal Year in Column J corresponding to document numbers stored in column I
+'       Put Client in Cell K1; this is returned from the 2 function modules
+' V9.0  Added Material Column
+'********************************************************************************************************************
+' Check Request changes should be logged here for reference.
+' CheckReqVersion should be incremented and logged here for updates
+'       Implement this section following the AutoJE section if and when it is updated
+'********************************************************************************************************************
+
+Public oBAPI As Object
+Public conn As Object
+Public Functions As Object
+Public PostJournal As Object
+Public AttachGOS As Object
+Public PostCheckRequest As Object
+Public CheckDocument As Object
+Public FuncExports As Object
+Public FieldObj As Object
+Public BUKRS As String
+Public SapDate As String
+Public DocuDate As String
+Public TempInt, currRow As Integer
+Public TempKursf As Single
+Public EntriesTable As Object
+Public ItemErrors As Object
+Public CrossCCDocs As Object
+Public MsgTexts As Object
+Public EntryRow As Object
+Public sapVendor As Object
+Public sapMaterial As Object
+Public EntriesRange As Range
+Public KeyRowFound As Boolean
+Public Const AutoJEVersion = "V9.0"
+Public RecurringEntry As Boolean
+Public oAttrFlags, oAttrValues, oReturn As Object
+Public Errors, ChangesFound, AttrsFound As Boolean
+Public PrintBarcodes As Object
+Public Sub CreateSAPJournalEntry()
+  
+  ' Check to see if document already posted
+  If IsEmpty(ActiveSheet.Range("N1").Value) <> True Then
+    MsgBox "Document already posted"
+    Exit Sub
+  End If
+  
+  If LogonToSap = 0 Then
+    Application.Cursor = xlDefault
+    Exit Sub
+  End If
+  
+  On Error Resume Next
+  
+  ' If a recurring entry document type call different function
+  If UCase(ActiveSheet.Range("H10").Value) = "SC" Then
+    RecurringEntry = True
+    Set PostJournal = Functions.Add("Z_POST_RECURRING_ENTRY")
+  Else
+    RecurringEntry = False
+    Set PostJournal = Functions.Add("Z_POST_JOURNAL_ENTRY")
+  End If
+  ' Put export objects in local object
+  Set FuncExports = PostJournal.Exports
+  
+  ' Set export parameters
+  '   Company code
+  Set FieldObj = FuncExports("BUKRS")
+  FieldObj.Value = ActiveSheet.Range("L10").Value
+  '   Document type
+  Set FieldObj = FuncExports("BLART")
+  FieldObj.Value = ActiveSheet.Range("H10").Value
+  If RecurringEntry = True Then
+    '   First run on
+    If IsEmpty(ActiveSheet.Range("N18")) = True Or _
+       IsNull(ActiveSheet.Range("N18")) = True Or _
+       ActiveSheet.Range("N18").Value = " " Then
+      ActiveSheet.Range("N18").Activate
+      MsgBox "First run on date required for Recurring Entry"
+      Set FuncExports = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+    Set FieldObj = FuncExports("DBBDT")
+    SapDate = ConvertDateToSap(ActiveSheet.Range("N18").Value)
+    FieldObj.Value = SapDate
+    
+    '   Last run on
+    If IsEmpty(ActiveSheet.Range("N19")) = True Or _
+       IsNull(ActiveSheet.Range("N19")) = True Or _
+       ActiveSheet.Range("N19").Value = " " Then
+      ActiveSheet.Range("N19").Activate
+      MsgBox "Last run on date required for Recurring Entry"
+      Set FuncExports = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+    Set FieldObj = FuncExports("DBEDT")
+    SapDate = ConvertDateToSap(ActiveSheet.Range("N19").Value)
+    FieldObj.Value = SapDate
+    
+    '   Run schedule
+    If IsEmpty(ActiveSheet.Range("N20")) = True Or _
+       IsNull(ActiveSheet.Range("N20")) = True Or _
+       ActiveSheet.Range("N20").Value = " " Then
+      ActiveSheet.Range("N20").Activate
+      MsgBox "Run schedule required for Recurring Entry"
+      Set FuncExports = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+    Set FieldObj = FuncExports("DBAKZ")
+    FieldObj.Value = ActiveSheet.Range("N20").Value
+
+  Else
+    '   Document date
+    Set FieldObj = FuncExports("BLDAT")
+    SapDate = ConvertDateToSap(ActiveSheet.Range("C6").Value)
+    FieldObj.Value = SapDate
+    If IsEmpty(ActiveSheet.Range("C8").Value) <> True Then
+      '   Posting date (not required)
+      Set FieldObj = FuncExports("BUDAT")
+      SapDate = ConvertDateToSap(ActiveSheet.Range("C8").Value)
+      FieldObj.Value = SapDate
+    End If
+  End If
+  '   Reference document
+  Set FieldObj = FuncExports("XBLNR")
+  FieldObj.Value = ActiveSheet.Range("C10").Value
+  '   Header text
+  Set FieldObj = FuncExports("BKTXT")
+  FieldObj.Value = ActiveSheet.Range("C12").Value
+  
+  ' Set line item entries
+  Set EntriesTable = PostJournal.Tables("ENTRIES")
+  
+  ' Loop through UsedRegion
+  Set EntriesRange = ActiveSheet.UsedRange
+  KeyRowFound = False
+  For Each thisRow In EntriesRange.Rows
+    If thisRow.Row > 16 Then
+      If thisRow.Row Mod 2 = 1 Then
+        '  Skip row if amount is blank or 0
+        If IsEmpty(thisRow.Cells(1, 3)) = False And _
+           IsNull(thisRow.Cells(1, 3)) = False And _
+           thisRow.Cells(1, 3).Value <> "" And _
+           thisRow.Cells(1, 3).Value <> " " Then
+          If Application.WorksheetFunction.IsNumber(thisRow.Cells(1, 3).Value) = False Then
+            thisRow.Cells(1, 3).Activate
+            MsgBox "Invalid amount"
+            Set FuncExports = Nothing
+            Application.Cursor = xlDefault
+            Exit Sub
+          End If
+          If thisRow.Cells(1, 3).Value <> 0 Then
+            Set EntryRow = EntriesTable.Rows.Add
+            KeyRowFound = True
+            EntryRow.Value("BSCHL") = thisRow.Cells(1, 1).Value
+            EntryRow.Value("KONTO") = thisRow.Cells(1, 2).Value
+            EntryRow.Value("WRBTR") = thisRow.Cells(1, 3).Value
+            EntryRow.Value("GSBER") = thisRow.Cells(1, 4).Value
+            EntryRow.Value("KOSTL") = thisRow.Cells(1, 5).Value
+            EntryRow.Value("AUFNR") = thisRow.Cells(1, 6).Value
+            EntryRow.Value("BUKRS") = thisRow.Cells(1, 7).Value
+          End If
+        End If
+      Else
+        If KeyRowFound = True Then
+          If IsEmpty(thisRow.Cells(1, 1)) = False Or _
+             IsEmpty(thisRow.Cells(1, 3)) = False Then
+            EntryRow.Value("ZUONR") = thisRow.Cells(1, 1).Value
+            EntryRow.Value("SGTXT") = thisRow.Cells(1, 3).Value
+          End If
+        End If
+        KeyRowFound = False
+      End If
+    End If
+  Next
+  
+  If PostJournal.Call = True Then
+    If PostJournal.Imports("RCODE").Value = 0 Then
+      ActiveSheet.Range("N1").Value = PostJournal.Imports("BELNR").Value
+      ActiveSheet.Range("L44").Value = PostJournal.Imports("NAME").Value & " " & PostJournal.Imports("CPUDT").Value
+      
+      ' Put document number in proper Company Code field
+      If ActiveSheet.Range("L10").Value = "5100" Then
+        ActiveSheet.Range("N4").Value = ActiveSheet.Range("N1").Value
+      ElseIf ActiveSheet.Range("L10").Value = "5110" Then
+        ActiveSheet.Range("N5").Value = ActiveSheet.Range("N1").Value
+      ElseIf ActiveSheet.Range("L10").Value = "5120" Then
+        ActiveSheet.Range("N6").Value = ActiveSheet.Range("N1").Value
+      ElseIf ActiveSheet.Range("L10").Value = "5130" Then
+        ActiveSheet.Range("N7").Value = ActiveSheet.Range("N1").Value
+      End If
+        
+      ' See if any cross company documents
+      Set CrossCCDocs = PostJournal.Tables("CCDOCS")
+      For Each thisRow In CrossCCDocs.Rows
+        If thisRow.Value("BUKRS") = "5100" Then
+          ActiveSheet.Range("N4").Value = thisRow.Value("BELNR")
+        ElseIf thisRow.Value("BUKRS") = "5110" Then
+          ActiveSheet.Range("N5").Value = thisRow.Value("BELNR")
+        ElseIf thisRow.Value("BUKRS") = "5120" Then
+          ActiveSheet.Range("N6").Value = thisRow.Value("BELNR")
+        ElseIf thisRow.Value("BUKRS") = "5130" Then
+          ActiveSheet.Range("N7").Value = thisRow.Value("BELNR")
+        End If
+      Next
+    
+    End If
+    Application.Cursor = xlDefault
+    Set MsgTexts = PostJournal.Tables("MSGTXTS")
+    For Each thisRow In MsgTexts.Rows
+      MsgBox thisRow.Value("MSGTEXT")
+    Next
+    
+  Else
+    Application.Cursor = xlDefault
+    MsgBox "Unable to post to SAP"
+  End If
+
+Exit Sub
+EH:
+
+  MsgBox Err.Number & " " & Err.Description
+  Application.Cursor = xlDefault
+
+End Sub
+
+Public Sub CreateSAPJournalEntry3()
+  
+  
+'  Call ClearExcessRowsAndColumns
+  
+  ' Check to see if document already posted
+  If IsEmpty(ActiveSheet.Range("I1").Value) <> True Then
+    MsgBox "Document already posted"
+    Exit Sub
+  End If
+  
+  If LogonToSap = 0 Then
+    Application.Cursor = xlDefault
+    Exit Sub
+  End If
+  
+  On Error Resume Next
+  
+  ' If a recurring entry document type call different function
+  Select Case UCase(ActiveSheet.Range("D14").Value)
+  Case "SC"
+    RecurringEntry = True
+    Set PostJournal = Functions.Add("Z_POST_RECURRING_ENTRY")
+  Case "DR"
+    RecurringEntry = False
+    Set PostJournal = Functions.Add("Z_POST_JE_CUSTADJ")
+  Case "SA"
+    RecurringEntry = False
+    Set PostJournal = Functions.Add("Z_POST_JE_CUSTADJ")
+  Case Else
+    RecurringEntry = False
+    Set PostJournal = Functions.Add("Z_POST_JE_CUSTADJ")
+  End Select
+  
+  ' Put export objects in local object
+  Set FuncExports = PostJournal.Exports
+  
+  ' Set export parameters
+  '   Company code
+  Set FieldObj = FuncExports("BUKRS")
+  FieldObj.Value = ActiveSheet.Range("D18").Value
+  '   Document type
+  Set FieldObj = FuncExports("BLART")
+  FieldObj.Value = ActiveSheet.Range("D14").Value
+  If RecurringEntry = True Then
+    '   First run on
+    If IsEmpty(ActiveSheet.Range("G17")) = True Or _
+       IsNull(ActiveSheet.Range("G17")) = True Or _
+       ActiveSheet.Range("G17").Value = " " Then
+      ActiveSheet.Range("G17").Activate
+      MsgBox "First run on date required for Recurring Entry"
+      Set FuncExports = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+    Set FieldObj = FuncExports("DBBDT")
+    SapDate = ConvertDateToSap(ActiveSheet.Range("G17").Value)
+    FieldObj.Value = SapDate
+    
+    '   Last run on
+    If IsEmpty(ActiveSheet.Range("G18")) = True Or _
+       IsNull(ActiveSheet.Range("G18")) = True Or _
+       ActiveSheet.Range("G18").Value = " " Then
+      ActiveSheet.Range("G18").Activate
+      MsgBox "Last run on date required for Recurring Entry"
+      Set FuncExports = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+    Set FieldObj = FuncExports("DBEDT")
+    SapDate = ConvertDateToSap(ActiveSheet.Range("G18").Value)
+    FieldObj.Value = SapDate
+    
+    '   Run schedule
+    If IsEmpty(ActiveSheet.Range("G19")) = True Or _
+       IsNull(ActiveSheet.Range("G19")) = True Or _
+       ActiveSheet.Range("G19").Value = " " Then
+      ActiveSheet.Range("G19").Activate
+      MsgBox "Run schedule required for Recurring Entry"
+      Set FuncExports = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+    Set FieldObj = FuncExports("DBAKZ")
+    FieldObj.Value = ActiveSheet.Range("G19").Value
+
+  Else
+    '   Document date
+    Set FieldObj = FuncExports("BLDAT")
+    SapDate = ConvertDateToSap(ActiveSheet.Range("D6").Value)
+    FieldObj.Value = SapDate
+    If IsEmpty(ActiveSheet.Range("D8").Value) <> True Then
+      '   Posting date (not required)
+      Set FieldObj = FuncExports("BUDAT")
+      SapDate = ConvertDateToSap(ActiveSheet.Range("D8").Value)
+      FieldObj.Value = SapDate
+    End If
+  End If
+  '   Reference document
+  Set FieldObj = FuncExports("XBLNR")
+  FieldObj.Value = ActiveSheet.Range("D10").Value
+  '   Header text
+  Set FieldObj = FuncExports("BKTXT")
+  FieldObj.Value = ActiveSheet.Range("D12").Value
+    
+' The following code triggers a batcherr session if A1 = SM35
+  If ActiveSheet.Range("D6").Value = "SM35" Then
+    Set FieldObj = FuncExports("BATCHERR")
+    FieldObj.Value = "X"
+  End If
+    
+  '   Currency
+  Set FieldObj = FuncExports("WAERS")
+  FieldObj.Value = ActiveSheet.Range("D20").Value
+  
+  '   Currency Rate {JE Upload Changes 3/25/06}
+  TempKursf = ActiveSheet.Range("E20").Value
+  TempKursf = TempKursf * 100000
+  Set FieldObj = FuncExports("KURSF")
+  FieldObj.Value = ActiveSheet.Range("E20").Value
+  
+  ' Set line item entries {JE Upload Changes 3/25/06}
+  Set EntriesTable = PostJournal.Tables("ENTRIES")
+  
+  ' Loop through UsedRegion
+  Set EntriesRange = ActiveSheet.UsedRange
+  KeyRowFound = False
+  For Each thisRow In EntriesRange.Rows
+    If thisRow.Row > 23 Then
+      '  Skip row if amount is blank or 0
+      If IsEmpty(thisRow.Cells(1, 3)) = False And _
+         IsNull(thisRow.Cells(1, 3)) = False And _
+         thisRow.Cells(1, 3).Value <> "" And _
+         thisRow.Cells(1, 3).Value <> " " Then
+        If Application.WorksheetFunction.IsNumber(thisRow.Cells(1, 3).Value) = False Then
+          thisRow.Cells(1, 3).Activate
+          MsgBox "Invalid amount"
+          Set FuncExports = Nothing
+          Application.Cursor = xlDefault
+          Exit Sub
+        End If
+        If thisRow.Cells(1, 3).Value <> 0 Then
+        
+          ' Check if valid quantity entered
+          If IsEmpty(thisRow.Cells(1, 10)) = False And _
+             IsNull(thisRow.Cells(1, 10)) = False And _
+             thisRow.Cells(1, 10).Value <> "" And _
+             thisRow.Cells(1, 10).Value <> " " Then
+            If Application.WorksheetFunction.IsNumber(thisRow.Cells(1, 10).Value) = False Then
+              thisRow.Cells(1, 10).Activate
+              MsgBox "Invalid quantity"
+              Set FuncExports = Nothing
+              Application.Cursor = xlDefault
+              Exit Sub
+            End If
+          End If
+        
+
+          Set EntryRow = EntriesTable.Rows.Add
+          KeyRowFound = True
+          
+         ' Reformat this as ## to make 1 into 01 RFSM 8883
+          Select Case thisRow.Cells(1, 1).Value
+            Case 1
+                thisRow.Cells(1, 1).Value = "01"
+            Case 7
+                thisRow.Cells(1, 1).Value = "07"
+          End Select
+          EntryRow.Value("BSCHL") = thisRow.Cells(1, 1).Value
+          
+          EntryRow.Value("KONTO") = thisRow.Cells(1, 2).Value
+          EntryRow.Value("WRBTR") = thisRow.Cells(1, 3).Value
+          EntryRow.Value("GSBER") = thisRow.Cells(1, 4).Value
+          EntryRow.Value("KOSTL") = thisRow.Cells(1, 5).Value
+          EntryRow.Value("AUFNR") = thisRow.Cells(1, 6).Value
+          EntryRow.Value("BUKRS") = thisRow.Cells(1, 7).Value
+          EntryRow.Value("ZUONR") = thisRow.Cells(1, 8).Value
+          EntryRow.Value("SGTXT") = thisRow.Cells(1, 9).Value
+          EntryRow.Value("MATNR") = thisRow.Cells(1, 10).Value
+          EntryRow.Value("MENGE") = thisRow.Cells(1, 11).Value
+          EntryRow.Value("MEINS") = thisRow.Cells(1, 12).Value
+          ' {JE Upload Changes 3/25/06}
+          EntryRow.Value("PROJK") = thisRow.Cells(1, 13).Value
+          '[ {JE Upload Changes 1/28/07 Profit Center Fields}
+          EntryRow.Value("PRCTR") = thisRow.Cells(1, 14).Value
+          'EntryRow.Value("KNDNR") = thisRow.Cells(1, 15).Value
+          EntryRow.Value("HIE01") = thisRow.Cells(1, 15).Value
+          EntryRow.Value("WWBRD") = thisRow.Cells(1, 16).Value
+          EntryRow.Value("WWCAT") = thisRow.Cells(1, 17).Value
+          EntryRow.Value("WWSCT") = thisRow.Cells(1, 18).Value
+          EntryRow.Value("WWTEM") = thisRow.Cells(1, 19).Value
+          '] {JE Upload Changes 1/28/07 Profit Center Fields}
+          '[ {JE Upload Changes 11/15/07 Sub-Team}
+          EntryRow.Value("WWSTM") = thisRow.Cells(1, 20).Value
+          '] {JE Upload Changes 1/28/07 Profit Center Fields}
+        End If
+      End If
+    End If
+  Next
+  
+  If PostJournal.Call = True Then
+    If PostJournal.Imports("RCODE").Value = 0 Then
+      ActiveSheet.Range("I1").Value = PostJournal.Imports("BELNR").Value
+      ActiveSheet.Range("J1").Value = PostJournal.Imports("GJAHR").Value
+      ActiveSheet.Range("I20").Value = PostJournal.Imports("NAME").Value & " " & PostJournal.Imports("CPUDT").Value
+      
+      ' Put document number in proper Company Code field
+'      If ActiveSheet.Range("D18").Value = "5100" Then
+'        ActiveSheet.Range("I4").Value = ActiveSheet.Range("I1").Value
+'      ElseIf ActiveSheet.Range("D18").Value = "5110" Then
+'        ActiveSheet.Range("I5").Value = ActiveSheet.Range("I1").Value
+'      ElseIf ActiveSheet.Range("D18").Value = "5120" Then
+'        ActiveSheet.Range("I6").Value = ActiveSheet.Range("I1").Value
+'      ElseIf ActiveSheet.Range("D18").Value = "5130" Then
+'        ActiveSheet.Range("I7").Value = ActiveSheet.Range("I1").Value
+'      End If
+        
+      ' See if any cross company documents
+      Set CrossCCDocs = PostJournal.Tables("CCDOCS")
+      currRow = 4
+      For Each thisRow In CrossCCDocs.Rows
+      
+        ActiveSheet.Cells(currRow, 8).Value = thisRow.Value("BUKRS")
+        BUKRS = thisRow.Value("BUKRS")
+        ActiveSheet.Cells(currRow, 9).Value = thisRow.Value("BELNR")
+        Belnr = thisRow.Value("BELNR")
+        ActiveSheet.Cells(currRow, 10).Value = thisRow.Value("GJAHR")
+        GJAHR = thisRow.Value("GJAHR")
+        currRow = currRow + 1
+
+      Next
+      
+      ' If no cross company set single company info
+      If currRow = 4 Then
+      
+        ActiveSheet.Cells(currRow, 8).Value = ActiveSheet.Range("D18").Value
+        BUKRS = ActiveSheet.Cells(currRow, 8).Value
+        ActiveSheet.Cells(currRow, 9).Value = ActiveSheet.Range("I1").Value
+        Belnr = ActiveSheet.Cells(currRow, 9).Value
+        ActiveSheet.Cells(currRow, 10).Value = PostJournal.Imports("GJAHR").Value
+        GJAHR = ActiveSheet.Cells(currRow, 10).Value
+
+        currRow = currRow + 1
+      
+      End If
+   
+End If
+End If
+
+  Application.Cursor = xlDefault
+    Set MsgTexts = PostJournal.Tables("MSGTXTS")
+    For Each thisRow In MsgTexts.Rows
+      MsgBox thisRow.Value("MSGTEXT")
+    Next
+
+Exit Sub
+EH:
+
+  MsgBox Err.Number & " " & Err.Description
+  Application.Cursor = xlDefault
+
+End Sub
+
+Public Sub CreateSAPCheckRequest()
+  
+  Dim Response, venResponse
+  Dim zeroString, vLen, Msg, Val, MyPos
+  Dim Amount, Amount2 As Currency
+  Dim venNum, cityStateZip, Belnr, MsgStr, NoStr, PostDate As String
+      
+  Call ClearExcessRowsAndColumns
+      
+' Send Option Must be Specified: 1 or 2 or 3. Only one choice.
+    Response = ActiveSheet.Range("B19").Value & _
+               ActiveSheet.Range("B21").Value & _
+               ActiveSheet.Range("B23").Value
+
+    If Response <> "X" Then
+          MsgBox "Choose One Check Delivery Option."
+            ActiveSheet.Range("B19").Value = ""
+            ActiveSheet.Range("B21").Value = ""
+            ActiveSheet.Range("B23").Value = ""
+      Exit Sub
+    End If
+
+  ' Use Data Validation.
+  'If ActiveSheet.OptionButton1.Value = True Then
+  '   ElseIf ActiveSheet.OptionButton2.Value = True Then
+  '   ElseIf ActiveSheet.OptionButton3.Value = True Then
+  '      Response = MsgBox("Is this an Immediate Needs check?", vbYesNo)
+  '      If Response = 7 Then
+  '         ActiveSheet.Range("B23").Value = ""
+  '         MsgBox "Choose Payee or Attachment", _
+  '         vbOKOnly, "Re-select Check Option..."
+  '        Exit Sub
+  '     End If
+  'End If
+  
+' As per Patti Stoll, 10/8/2006, require only Name and Location
+' If Return to is selected, require all 4 entries for Name, Location, Department and Phone
+    If ActiveSheet.CheckBox1.Value = True Then
+     If ActiveSheet.Range("D27").Value = "" Or ActiveSheet.Range("D27").Value = " " Then
+           MsgBox "Fill in Name", _
+                  vbOKOnly, "Return to data is missing..."
+        Exit Sub
+     End If
+     If ActiveSheet.Range("D28").Value = "" Or ActiveSheet.Range("D28").Value = " " Then
+          MsgBox "Fill in Location", _
+                vbOKOnly, "Return to data is missing..."
+        Exit Sub
+     End If
+     'If ActiveSheet.Range("D29").Value = "" Or ActiveSheet.Range("D29").Value = " " Then
+     '     MsgBox "Fill in Department", _
+     '           vbOKOnly, "Return to data is missing..."
+     '   Exit Sub
+     'End If
+     'If ActiveSheet.Range("D30").Value = "" Or ActiveSheet.Range("D30").Value = " " Then
+     '     MsgBox "Fill in Phone", _
+     '           vbOKOnly, "Return to data is missing..."
+     '   Exit Sub
+     'End If
+    End If
+      
+  ' Check to see if document already posted
+  If IsEmpty(ActiveSheet.Range("J1").Value) <> True Then
+    MsgBox "Check request already processed"
+    Exit Sub
+  End If
+  
+  ' Check to see if valid invoice amount entered
+  Val = ActiveSheet.Range("E16").Value
+  If Application.WorksheetFunction.IsNumber(Val) = False Then
+    ActiveSheet.Range("E16").Activate
+    MsgBox "Please enter a valid invoice amount"
+    Exit Sub
+  End If
+  
+  ' Check to see if transaction is balanced
+  Val = ActiveSheet.Range("E7").Value
+  If Application.WorksheetFunction.IsNumber(Val) = False Then
+    MsgBox "Transaction does not balance"
+    Exit Sub
+  End If
+  
+  Amount = ActiveSheet.Range("E7").Value
+  Amount2 = ActiveSheet.Range("G7").Value
+  If Amount <> Amount2 Then
+    MsgBox "Transaction does not balance"
+    Exit Sub
+  End If
+  
+  ' Check to see if invoice number entered
+  If IsEmpty(ActiveSheet.Range("E12").Value) = True Or _
+     ActiveSheet.Range("E12").Value = " " Then
+    ActiveSheet.Range("E12").Activate
+    MsgBox "Please enter invoice number"
+    Exit Sub
+  End If
+
+  ' Check to see if vendor number entered
+  If IsEmpty(ActiveSheet.Range("E10").Value) = True Or _
+     ActiveSheet.Range("E10").Value = " " Then
+    ActiveSheet.Range("E10").Activate
+    MsgBox "Please enter vendor number"
+    Exit Sub
+  End If
+  
+  ' Check to see if document type entered
+  If IsEmpty(ActiveSheet.Range("E13").Value) = True Or _
+     ActiveSheet.Range("E13").Value = " " Then
+    ActiveSheet.Range("E13").Activate
+    MsgBox "Please enter document type"
+    Exit Sub
+  End If
+  
+  ' Check to see if company code entered
+  If IsEmpty(ActiveSheet.Range("E14").Value) = True Or _
+     ActiveSheet.Range("E14").Value = " " Then
+    ActiveSheet.Range("E14").Activate
+    MsgBox "Please enter company code"
+    Exit Sub
+  End If
+  
+  ' Check to see if business area entered
+  If IsEmpty(ActiveSheet.Range("F14").Value) = True Or _
+     ActiveSheet.Range("F14").Value = " " Then
+    ActiveSheet.Range("F14").Activate
+    MsgBox "Please enter business area"
+    Exit Sub
+  End If
+  
+  ' Check to see if vendor posting key entered
+  If IsEmpty(ActiveSheet.Range("E15").Value) = True Or _
+     ActiveSheet.Range("E15").Value = " " Then
+    ActiveSheet.Range("E15").Activate
+    MsgBox "Please enter posting key"
+    Exit Sub
+  End If
+  
+  ' Check to see if invoice amount entered
+  If IsEmpty(ActiveSheet.Range("E16").Value) = True Or _
+     ActiveSheet.Range("E16").Value = " " Then
+     ActiveSheet.Range("E16").Activate
+    MsgBox "Please enter an invoice amount"
+    Exit Sub
+  End If
+  
+  ' Check to see if invoice date entered
+  If IsEmpty(ActiveSheet.Range("E11").Value) = True Or _
+     ActiveSheet.Range("E11").Value = " " Then
+    ActiveSheet.Range("E11").Activate
+    MsgBox "Please enter an invoice date"
+    Exit Sub
+  End If
+  
+  ' Check to see if valid invoice date entered
+  If IsDate(ActiveSheet.Range("E11").Value) = False Then
+    ActiveSheet.Range("E11").Activate
+    MsgBox "Please enter a valid invoice date"
+    Exit Sub
+  End If
+  
+  ' Check to see if business area entered
+  If IsEmpty(ActiveSheet.Range("C34").Value) = True Or _
+     ActiveSheet.Range("F14").Value = " " Then
+    ActiveSheet.Range("F14").Activate
+    MsgBox "Please enter a business area"
+    Exit Sub
+  End If
+  
+  If LogonToSap = 0 Then
+    Application.Cursor = xlDefault
+    Exit Sub
+  End If
+  
+  ' Get vendor information
+  On Error GoTo EH
+  venNum = ActiveSheet.Range("E10").Value
+  vLen = Len(venNum)
+  vLen = 10 - vLen
+  zeroString = String(vLen, "0")
+  venNum = zeroString & venNum
+  Set sapVendor = oBAPI.GetSAPObject("EGR_Vendor", venNum)
+  If sapVendor Is Nothing Then
+    MsgBox "Unable to get vendor information"
+    Application.Cursor = xlDefault
+    Exit Sub
+  End If
+  
+  ' See if vendor is set up as a one-time vendor account
+  If sapVendor.OneTimeAccount = "X" Then
+    Msg = "Vendor is a One-time vendor account," & Chr(13) & "the address on the spreadsheet will be used." & Chr(13) & "Continue?"
+    venResponse = MsgBox(Msg, vbYesNo, "SAP One-Time Vendor")
+    If venResponse = vbNo Then
+      Set sapVendor = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+  Else
+    Msg = sapVendor.Name & Chr(13) & sapVendor.Street & Chr(13) & sapVendor.City & ", " & sapVendor.Region & " " & sapVendor.PostalCode
+    Msg = Msg & Chr(13) & " " & Chr(13) & "Continue?"
+    venResponse = MsgBox(Msg, vbYesNo, "SAP Vendor Address")
+    If venResponse = vbNo Then
+      Set sapVendor = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+  End If
+  
+  ' Get document date
+  DocuDate = ConvertDateToSap(ActiveSheet.Range("E11").Value)
+  
+  ' Check if document may be a duplicate
+  Set CheckDocument = Functions.Add("Z_CHECK_FOR_DOCUMENT")
+  Set FuncExports = CheckDocument.Exports
+  '   Company code
+  Set FieldObj = FuncExports("BUKRS")
+  FieldObj.Value = ActiveSheet.Range("E14").Value
+  '   Vendor
+  Set FieldObj = FuncExports("LIFNR")
+  FieldObj.Value = ActiveSheet.Range("E10").Value
+  '   Currency
+  Set FieldObj = FuncExports("WAERS")
+  FieldObj.Value = "USD"
+  '   Document Date
+  Set FieldObj = FuncExports("BLDAT")
+  FieldObj.Value = DocuDate
+  '   Reference document
+  Set FieldObj = FuncExports("XBLNR")
+  FieldObj.Value = ActiveSheet.Range("E12").Value
+  '   Amount
+  Set FieldObj = FuncExports("WRBTR")
+  FieldObj.Value = ActiveSheet.Range("E16").Value
+  
+  If CheckDocument.Call = True Then
+    If CheckDocument.Imports("RCODE").Value = 1 Then
+      Belnr = CheckDocument.Imports("BELNR").Value
+      Msg = "Invoice may already have been entered as document " & Belnr & Chr(13) & "Continue?"
+      venResponse = MsgBox(Msg, vbYesNo, "Possible Duplicate Posting")
+      If venResponse = vbNo Then
+        Set sapVendor = Nothing
+        Set FuncExports = Nothing
+        Application.Cursor = xlDefault
+        Exit Sub
+      End If
+    End If
+  End If
+  
+  Set FuncExports = Nothing
+  
+  Set PostCheckRequest = Functions.Add("Z_POST_CHECK_REQUEST_COPA")
+  ' Put export objects in local object
+  Set FuncExports = PostCheckRequest.Exports
+  
+  ' Set export parameters
+  '   Company code
+  Set FieldObj = FuncExports("BUKRS")
+  FieldObj.Value = ActiveSheet.Range("E14").Value
+  '   Document type
+  Set FieldObj = FuncExports("BLART")
+  FieldObj.Value = ActiveSheet.Range("E13").Value
+  '   Document date
+  Set FieldObj = FuncExports("BLDAT")
+  FieldObj.Value = DocuDate
+
+  '   Posting date = current date
+  Set FieldObj = FuncExports("BUDAT")
+  If IsEmpty(ActiveSheet.Range("J29").Value) = True Or _
+     ActiveSheet.Range("J29").Value = " " Then
+    PostDate = Date
+    SapDate = ConvertDateToSap(Date)
+  Else
+    PostDate = ActiveSheet.Range("J29").Value
+    SapDate = ConvertDateToSap(ActiveSheet.Range("J29").Value)
+  End If
+
+  '   Reference document
+  Set FieldObj = FuncExports("XBLNR")
+  FieldObj.Value = ActiveSheet.Range("E12").Value
+  
+  '   Header text
+  Set FieldObj = FuncExports("BKTXT")
+  FieldObj.Value = ActiveSheet.Range("H10").Value
+   
+   '   Change Payment Method to read dropdown.
+   '   Payment method
+    Set FieldObj = FuncExports("ZLSCH")
+    If ActiveSheet.Range("E14") = "5110" Then
+        If ActiveSheet.Range("F14").Value <> "4367" And ActiveSheet.Range("F14").Value <> "4369" And ActiveSheet.Range("F14").Value <> "4570" Then
+            If ActiveSheet.Range("B19").Value = "X" Then
+                FieldObj.Value = " "
+            ElseIf ActiveSheet.Range("B21").Value = "X" Then
+                FieldObj.Value = "4"
+            ElseIf ActiveSheet.Range("B23").Value = "X" Then
+                FieldObj.Value = "5"
+            End If
+        Else
+            If ActiveSheet.Range("B19").Value = "X" Then
+                FieldObj.Value = " "
+            ElseIf ActiveSheet.Range("B21").Value = "X" Then
+                FieldObj.Value = "G"
+            ElseIf ActiveSheet.Range("B23").Value = "X" Then
+                FieldObj.Value = "I"
+            End If
+        End If
+    Else
+        If ActiveSheet.Range("B19").Value = "X" Then
+            FieldObj.Value = " "
+        ElseIf ActiveSheet.Range("B21").Value = "X" Then
+            FieldObj.Value = "G"
+        ElseIf ActiveSheet.Range("B23").Value = "X" Then
+            FieldObj.Value = "I"
+        End If
+    End If
+  
+   ' For future use of foreign currencies, remove comments
+   ' Replace E12 and E20 with actual cell used.
+   ' Set FieldObj = FuncExports("WAERS")
+   ' FieldObj.Value = ActiveSheet.Range("E12").Value
+   ' Set FieldObj = FuncExports("KURSF")
+   ' TempKursf = ActiveSheet.Range("E20").Value
+   ' TempKursf = TempKursf * 100000
+   ' FieldObj.Value = ActiveSheet.Range("E20").Value
+  
+  ' If one time vendor account, get address info
+  If sapVendor.OneTimeAccount = "X" Then
+    ' Name
+    Set FieldObj = FuncExports("NAME1")
+    FieldObj.Value = ActiveSheet.Range("H10").Value
+    ' Street Address
+    Set FieldObj = FuncExports("STRAS")
+    FieldObj.Value = ActiveSheet.Range("H11").Value
+    ' City
+    Set FieldObj = FuncExports("ORT01")
+    FieldObj.Value = ActiveSheet.Range("H13").Value
+    ' State
+    Set FieldObj = FuncExports("REGIO")
+    FieldObj.Value = ActiveSheet.Range("H14").Value
+    ' Zip code
+    Set FieldObj = FuncExports("PSTLZ")
+    FieldObj.Value = ActiveSheet.Range("H15").Value
+  End If
+  
+  ' Set line item entries
+  Set EntriesTable = PostCheckRequest.Tables("ENTRIES")
+  
+  ' Set up first line item
+  Set EntryRow = EntriesTable.Rows.Add
+  EntryRow.Value("BSCHL") = ActiveSheet.Range("E15").Value
+  EntryRow.Value("KONTO") = ActiveSheet.Range("E10").Value
+  ' Make sure amount is rounded to two decimal places
+  Amount = CCur((Fix((ActiveSheet.Range("E16").Value * 100) + 0.5)) / 100)
+  EntryRow.Value("WRBTR") = Amount
+  EntryRow.Value("GSBER") = ActiveSheet.Range("F14").Value
+  EntryRow.Value("SGTXT") = ActiveSheet.Range("H17").Value
+    
+  ' Loop through UsedRegion
+  Set EntriesRange = ActiveSheet.UsedRange
+  For Each thisRow In EntriesRange.Rows
+    If thisRow.Row > 33 Then
+      '  Skip row if amount is blank or 0
+      If IsEmpty(thisRow.Cells(1, 6)) = False And _
+         IsNull(thisRow.Cells(1, 6)) = False And _
+         thisRow.Cells(1, 6).Value <> " " Then
+        If Application.WorksheetFunction.IsNumber(thisRow.Cells(1, 6).Value) = False Then
+          thisRow.Cells(1, 6).Activate
+          MsgBox "Invalid amount"
+          Set sapVendor = Nothing
+          Set FuncExports = Nothing
+          Application.Cursor = xlDefault
+          Exit Sub
+        End If
+        ' Make sure amount is rounded to two decimal places
+        Amount = thisRow.Cells(1, 6).Value
+        Amount = Int(Amount * 100 + 0.5) / 100
+        
+        If Amount <> 0 Then
+          If IsEmpty(thisRow.Cells(1, 1)) = True Or _
+             thisRow.Cells(1, 1).Value = " " Then
+            thisRow.Cells(1, 1).Activate
+            MsgBox "Please enter a posting key"
+            Set sapVendor = Nothing
+            Set FuncExports = Nothing
+            Application.Cursor = xlDefault
+            Exit Sub
+          End If
+          If IsEmpty(thisRow.Cells(1, 3)) = True Or _
+            thisRow.Cells(1, 3).Value = " " Then
+            thisRow.Cells(1, 3).Activate
+            MsgBox "Please enter a business area"
+            Set sapVendor = Nothing
+            Set FuncExports = Nothing
+            Application.Cursor = xlDefault
+            Exit Sub
+          End If
+
+          If thisRow.Cells(1, 1).Value = "21" Or thisRow.Cells(1, 1).Value = "31" Then
+            If thisRow.Cells(1, 4).Value <> ActiveSheet.Range("E10").Value Then
+              On Error GoTo EH
+              Set sapVendor = Nothing
+              venNum = thisRow.Cells(1, 4).Value
+              vLen = Len(venNum)
+              vLen = 10 - vLen
+              zeroString = String(vLen, "0")
+              venNum = zeroString & venNum
+              Set sapVendor = oBAPI.GetSAPObject("EGR_Vendor", venNum)
+              If sapVendor Is Nothing Then
+                thisRow.Cells(1, 4).Activate
+                MsgBox "Unable to get vendor information"
+                Set FuncExports = Nothing
+                Application.Cursor = xlDefault
+                Exit Sub
+              End If
+              thisRow.Cells(1, 4).Activate
+              Msg = sapVendor.Name & Chr(13) & sapVendor.Street & Chr(13) & sapVendor.City & ", " & sapVendor.Region & " " & sapVendor.PostalCode
+              Msg = Msg & Chr(13) & " " & Chr(13) & "Continue?"
+              venResponse = MsgBox(Msg, vbYesNo, "SAP Vendor Address")
+              If venResponse = vbNo Then
+                Set sapVendor = Nothing
+                Set FuncExports = Nothing
+                Application.Cursor = xlDefault
+                Exit Sub
+              End If
+            End If
+            If IsEmpty(thisRow.Cells(1, 8).Value) = True Or _
+               thisRow.Cells(1, 8).Value = " " Then
+              thisRow.Cells(1, 8).Activate
+              MsgBox "Please enter item text"
+              Set sapVendor = Nothing
+              Set FuncExports = Nothing
+              Application.Cursor = xlDefault
+              Exit Sub
+            End If
+          End If
+          Set EntryRow = EntriesTable.Rows.Add
+          EntryRow.Value("BSCHL") = thisRow.Cells(1, 1).Value
+          EntryRow.Value("BUKRS") = thisRow.Cells(1, 2).Value
+          BUKRS = thisRow.Cells(1, 2).Value
+          EntryRow.Value("GSBER") = thisRow.Cells(1, 3).Value
+          EntryRow.Value("KOSTL") = thisRow.Cells(1, 5).Value
+          EntryRow.Value("KONTO") = thisRow.Cells(1, 4).Value
+          EntryRow.Value("WRBTR") = Amount
+          EntryRow.Value("ZUONR") = thisRow.Cells(1, 7).Value
+          EntryRow.Value("SGTXT") = thisRow.Cells(1, 8).Value
+          EntryRow.Value("AUFNR") = thisRow.Cells(1, 9).Value
+          EntryRow.Value("PROJK") = thisRow.Cells(1, 10).Value
+          
+          '[ {JE Upload Changes 1/28/07 Profit Center Fields}
+          EntryRow.Value("PRCTR") = thisRow.Cells(1, 11).Value
+          EntryRow.Value("HIE01") = thisRow.Cells(1, 12).Value
+          EntryRow.Value("WWBRD") = thisRow.Cells(1, 13).Value
+          EntryRow.Value("WWCAT") = thisRow.Cells(1, 14).Value
+          EntryRow.Value("WWSCT") = thisRow.Cells(1, 15).Value
+          EntryRow.Value("WWTEM") = thisRow.Cells(1, 16).Value
+          EntryRow.Value("WWSTM") = thisRow.Cells(1, 17).Value
+          '] {JE Upload Changes 1/28/07 Profit Center Fields}
+          
+        End If
+      End If
+    End If
+  Next
+  
+  If PostCheckRequest.Call = True Then
+    If PostCheckRequest.Imports("RCODE").Value = 0 Then
+      ActiveSheet.Range("J1").Value = PostCheckRequest.Imports("BELNR").Value
+      ' ActiveSheet.Range("K1").Value = PostCheckRequest.Imports("GJAHR").Value
+      ActiveSheet.Range("H30").Value = PostCheckRequest.Imports("NAME").Value
+      ActiveSheet.Range("H31").Value = PostDate
+      
+' Call OPUS from Here
+      
+      If ActiveSheet.ProtectContents = False Then
+        ActiveSheet.Range("H31").HorizontalAlignment = xlLeft
+      End If
+      
+      ' Put document number in proper Company Code field
+'      If ActiveSheet.Range("E14").Value = "5100" Then
+'        ActiveSheet.Range("J2").Value = ActiveSheet.Range("J1").Value
+'      ElseIf ActiveSheet.Range("E14").Value = "5110" Then
+'        ActiveSheet.Range("J3").Value = ActiveSheet.Range("J1").Value
+'      ElseIf ActiveSheet.Range("E14").Value = "5120" Then
+'        ActiveSheet.Range("J4").Value = ActiveSheet.Range("J1").Value
+'      ElseIf ActiveSheet.Range("E14").Value = "5130" Then
+'        ActiveSheet.Range("J5").Value = ActiveSheet.Range("J1").Value
+'      End If
+        
+' See if any cross company documents
+       Set CrossCCDocs = PostCheckRequest.Tables("CCDOCS")
+       currRow = 2
+      For Each thisRow In CrossCCDocs.Rows
+        ActiveSheet.Cells(currRow, 9).Value = thisRow.Value("BUKRS")
+        ActiveSheet.Cells(currRow, 10).Value = thisRow.Value("BELNR")
+        ' ActiveSheet.Cells(currRow, 11).Value = thisRow.Value("GJAHR")
+        currRow = currRow + 1
+        If currRow > 17 Then
+          currRow = 17
+        End If
+      Next
+    
+      While currRow < 6
+        ActiveSheet.Cells(currRow, 9).Value = ""
+        ActiveSheet.Cells(currRow, 10).Value = ""
+        currRow = currRow + 1
+      Wend
+    
+    End If
+    
+    Application.Cursor = xlDefault
+    Set MsgTexts = PostCheckRequest.Tables("MSGTXTS")
+    ' NoStr = "No batch input data"
+    TempInt = 0
+    For Each thisRow In MsgTexts.Rows
+      MsgStr = thisRow.Value("MSGTEXT")
+         MsgBox MsgStr
+         
+      If TempInt = 0 Then
+        TempInt = InStr(1, thisRow.Value("MSGTEXT"), _
+                "was posted in company code", vbTextCompare)
+      End If
+
+    Next
+    
+    If TempInt = 0 Then
+         MsgStr = "Unable to post to SAP"
+         MsgBox MsgStr
+    End If
+    
+  Else
+    Application.Cursor = xlDefault
+    MsgBox "Unable to post to SAP"
+  End If
+
+  Set sapVendor = Nothing
+  
+Exit Sub
+EH:
+
+  If Err.Number = "8800" Then
+    Msg = "Vendor " & venNum & " does not exist"
+    MsgBox Msg
+  Else
+    MsgBox Err.Number & " " & Err.Description
+  End If
+  Application.Cursor = xlDefault
+
+End Sub
+
+Public Sub CreateSAPExpenseReport()
+  
+  Dim Response, venResponse
+  Dim zeroString, vLen, Msg
+  Dim venNum, cityStateZip, BusinessArea As String
+      
+  ' Check to see if document already posted
+  If IsEmpty(ActiveSheet.Range("I63").Value) <> True Then
+    MsgBox "Expense Report already processed"
+    Exit Sub
+  End If
+  
+  ' Check to see if vendor number entered
+  If IsEmpty(ActiveSheet.Range("B2").Value) = True Or _
+     ActiveSheet.Range("B2").Value = " " Then
+    ActiveSheet.Range("B2").Activate
+    MsgBox "Please enter vendor number"
+    Exit Sub
+  End If
+  
+  ' Check to see if invoice amount entered
+  If IsEmpty(ActiveSheet.Range("E51").Value) = True Or _
+     ActiveSheet.Range("E51").Value = " " Then
+    ActiveSheet.Range("E51").Activate
+    MsgBox "Please enter an amount"
+    Exit Sub
+  End If
+  
+  ' Check to see if invoice date entered
+  If IsEmpty(ActiveSheet.Range("D8").Value) = True Or _
+     ActiveSheet.Range("D8").Value = " " Then
+    ActiveSheet.Range("D8").Activate
+    MsgBox "Please enter a week ending date"
+    Exit Sub
+  End If
+  
+  ' Check to see if company code entered
+  If IsEmpty(ActiveSheet.Range("B43").Value) = True Or _
+     ActiveSheet.Range("B43").Value = " " Then
+    ActiveSheet.Range("B43").Activate
+    MsgBox "Please enter company code"
+    Exit Sub
+  End If
+  
+  If LogonToSap = 0 Then
+    Application.Cursor = xlDefault
+    Exit Sub
+  End If
+  
+  ' Get vendor information
+  On Error GoTo EH
+  venNum = ActiveSheet.Range("B2").Value
+  vLen = Len(venNum)
+  vLen = 10 - vLen
+  zeroString = String(vLen, "0")
+  venNum = zeroString & venNum
+  ' Set sapVendor = oBAPI.GetSAPObject("Vendor", venNum)
+  Set sapVendor = oBAPI.GetSAPObject("EGR_Vendor", venNum)
+  If sapVendor Is Nothing Then
+    MsgBox "Unable to get vendor information"
+    Application.Cursor = xlDefault
+    Exit Sub
+  End If
+  
+  ' Make sure it is an employee vendor
+  If sapVendor.AccountGroup <> "EMPL" Then
+    ActiveSheet.Range("B2").Activate
+    MsgBox "Vendor is not an employee"
+    Application.Cursor = xlDefault
+    Exit Sub
+  End If
+  
+  ' See if vendor address is correct
+  Msg = sapVendor.Name & Chr(13) & sapVendor.Street & Chr(13) & sapVendor.City & ", " & sapVendor.Region & " " & sapVendor.PostalCode
+  Msg = Msg & Chr(13) & " " & Chr(13) & "Continue?"
+  venResponse = MsgBox(Msg, vbYesNo, "SAP Vendor Address")
+  If venResponse = vbNo Then
+    Set sapVendor = Nothing
+    Application.Cursor = xlDefault
+    Exit Sub
+  End If
+   
+  ' Get document date
+  DocuDate = ConvertDateToSap(ActiveSheet.Range("D8").Value)
+  
+  ' Check if document may be a duplicate
+  Set CheckDocument = Functions.Add("Z_CHECK_FOR_DOCUMENT")
+  Set FuncExports = CheckDocument.Exports
+  '   Company code
+  Set FieldObj = FuncExports("BUKRS")
+  FieldObj.Value = ActiveSheet.Range("B43").Value
+  '   Vendor
+  Set FieldObj = FuncExports("LIFNR")
+  FieldObj.Value = ActiveSheet.Range("B2").Value
+  '   Currency
+  Set FieldObj = FuncExports("WAERS")
+  FieldObj.Value = "USD"
+  '   Document Date
+  Set FieldObj = FuncExports("BLDAT")
+  FieldObj.Value = DocuDate
+  '   Reference document
+  Set FieldObj = FuncExports("XBLNR")
+  FieldObj.Value = "EXPRPT " & DocuDate
+  '   Amount
+  Set FieldObj = FuncExports("WRBTR")
+  FieldObj.Value = ActiveSheet.Range("E51").Value
+  
+  If CheckDocument.Call = True Then
+    If CheckDocument.Imports("RCODE").Value = 1 Then
+      Belnr = CheckDocument.Imports("BELNR").Value
+      Msg = "Invoice may already have been entered as document " & Belnr & Chr(13) & "Continue?"
+      Response = MsgBox(Msg, vbYesNo, "Possible Duplicate Posting")
+      If Response = vbNo Then
+        Set sapVendor = Nothing
+        Set FuncExports = Nothing
+        Application.Cursor = xlDefault
+        Exit Sub
+      End If
+    End If
+  End If
+  
+  Set FuncExports = Nothing
+  
+  Set PostCheckRequest = Functions.Add("Z_POST_CHECK_REQUEST")
+  ' Put export objects in local object
+  Set FuncExports = PostCheckRequest.Exports
+  
+  ' Set export parameters
+  '   Company code
+  Set FieldObj = FuncExports("BUKRS")
+  FieldObj.Value = ActiveSheet.Range("B43").Value
+  '   Document type
+  Set FieldObj = FuncExports("BLART")
+  FieldObj.Value = "KN"
+  '   Document date
+  Set FieldObj = FuncExports("BLDAT")
+  FieldObj.Value = DocuDate
+
+  '   Posting date = current date
+  Set FieldObj = FuncExports("BUDAT")
+  SapDate = ConvertDateToSap(Date)
+  FieldObj.Value = SapDate
+  
+  '   Reference document
+  Set FieldObj = FuncExports("XBLNR")
+  FieldObj.Value = "EXPRPT " & DocuDate
+  '   Header text
+  Set FieldObj = FuncExports("BKTXT")
+  FieldObj.Value = ActiveSheet.Range("B3").Value
+   '   Payment method
+  Set FieldObj = FuncExports("ZLSCH")
+  FieldObj.Value = " "
+    
+  ' If one time vendor account, get address info
+  If sapVendor.OneTimeAccount = "X" Then
+    ' Name
+    Set FieldObj = FuncExports("NAME1")
+    FieldObj.Value = ActiveSheet.Range("H10").Value
+    ' Street Address
+    Set FieldObj = FuncExports("STRAS")
+    FieldObj.Value = ActiveSheet.Range("H11").Value
+    ' City
+    Set FieldObj = FuncExports("ORT01")
+    FieldObj.Value = ActiveSheet.Range("H13").Value
+    ' State
+    Set FieldObj = FuncExports("REGIO")
+    FieldObj.Value = ActiveSheet.Range("H14").Value
+    ' Zip code
+    Set FieldObj = FuncExports("PSTLZ")
+    FieldObj.Value = ActiveSheet.Range("H15").Value
+  End If
+  
+  ' Set line item entries
+  Set EntriesTable = PostCheckRequest.Tables("ENTRIES")
+  
+  ' Set up first line item
+  Set EntryRow = EntriesTable.Rows.Add
+  EntryRow.Value("BSCHL") = "31"
+  EntryRow.Value("KONTO") = ActiveSheet.Range("B2").Value
+  EntryRow.Value("WRBTR") = ActiveSheet.Range("E51").Value
+  BusinessArea = ActiveSheet.Range("D43").Value
+  vLen = Len(BusinessArea)
+  If vLen = 0 Then
+    ActiveSheet.Range("D43").Activate
+    MsgBox "Please enter Business Area/Cost Center"
+    Set sapVendor = Nothing
+    Set FuncExports = Nothing
+    Application.Cursor = xlDefault
+    Exit Sub
+  End If
+  If vLen > 4 Then
+    BusinessArea = Mid(BusinessArea, 1, 4)
+  End If
+
+  EntryRow.Value("GSBER") = BusinessArea
+  EntryRow.Value("ZUONR") = " "
+  ' EntryRow.Value("SGTXT") = ActiveSheet.Range("H17").Value
+    
+  '  Skip row if amount is blank or 0
+  If IsEmpty(ActiveSheet.Range("E43").Value) = False And _
+     IsNull(ActiveSheet.Range("E43").Value) = False And _
+      ActiveSheet.Range("E43").Value <> 0 Then
+    Set EntryRow = EntriesTable.Rows.Add
+    EntryRow.Value("BSCHL") = "40"
+    EntryRow.Value("BUKRS") = ActiveSheet.Range("B43").Value
+    EntryRow.Value("GSBER") = BusinessArea
+    If vLen > 4 Then
+      EntryRow.Value("KOSTL") = ActiveSheet.Range("D43").Value
+    End If
+    EntryRow.Value("KONTO") = ActiveSheet.Range("C43").Value
+    EntryRow.Value("WRBTR") = ActiveSheet.Range("E43").Value
+    EntryRow.Value("ZUONR") = ActiveSheet.Range("G43").Value
+    EntryRow.Value("SGTXT") = ActiveSheet.Range("I43").Value
+    EntryRow.Value("AUFNR") = ActiveSheet.Range("F43").Value
+  End If
+  
+  '  Skip row if amount is blank or 0
+  If IsEmpty(ActiveSheet.Range("E44").Value) = False And _
+     IsNull(ActiveSheet.Range("E44").Value) = False And _
+      ActiveSheet.Range("E44").Value <> 0 Then
+    Set EntryRow = EntriesTable.Rows.Add
+    EntryRow.Value("BSCHL") = "40"
+    EntryRow.Value("BUKRS") = ActiveSheet.Range("B44").Value
+    BusinessArea = ActiveSheet.Range("D44").Value
+    vLen = Len(BusinessArea)
+    If vLen = 0 Then
+      ActiveSheet.Range("D44").Activate
+      MsgBox "Please enter Business Area/Cost Center"
+      Set sapVendor = Nothing
+      Set FuncExports = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+    If vLen > 4 Then
+      BusinessArea = Mid(BusinessArea, 1, 4)
+    End If
+    EntryRow.Value("GSBER") = BusinessArea
+    If vLen > 4 Then
+      EntryRow.Value("KOSTL") = ActiveSheet.Range("D44").Value
+    End If
+    EntryRow.Value("KONTO") = ActiveSheet.Range("C44").Value
+    EntryRow.Value("WRBTR") = ActiveSheet.Range("E44").Value
+    EntryRow.Value("ZUONR") = ActiveSheet.Range("G44").Value
+    EntryRow.Value("SGTXT") = ActiveSheet.Range("I44").Value
+    EntryRow.Value("AUFNR") = ActiveSheet.Range("F44").Value
+  End If
+  
+  '  Skip row if amount is blank or 0
+  If IsEmpty(ActiveSheet.Range("E45").Value) = False And _
+     IsNull(ActiveSheet.Range("E45").Value) = False And _
+      ActiveSheet.Range("E45").Value <> 0 Then
+    Set EntryRow = EntriesTable.Rows.Add
+    EntryRow.Value("BSCHL") = "40"
+    EntryRow.Value("BUKRS") = ActiveSheet.Range("B45").Value
+    BusinessArea = ActiveSheet.Range("D45").Value
+    vLen = Len(BusinessArea)
+    If vLen = 0 Then
+      ActiveSheet.Range("D45").Activate
+      MsgBox "Please enter Business Area/Cost Center"
+      Set sapVendor = Nothing
+      Set FuncExports = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+    If vLen > 4 Then
+      BusinessArea = Mid(BusinessArea, 1, 4)
+    End If
+    EntryRow.Value("GSBER") = BusinessArea
+    If vLen > 4 Then
+      EntryRow.Value("KOSTL") = ActiveSheet.Range("D45").Value
+    End If
+    EntryRow.Value("KONTO") = ActiveSheet.Range("C45").Value
+    EntryRow.Value("WRBTR") = ActiveSheet.Range("E45").Value
+    EntryRow.Value("ZUONR") = ActiveSheet.Range("G45").Value
+    EntryRow.Value("SGTXT") = ActiveSheet.Range("I45").Value
+    EntryRow.Value("AUFNR") = ActiveSheet.Range("F45").Value
+  End If
+  
+  '  Skip row if amount is blank or 0
+  If IsEmpty(ActiveSheet.Range("E46").Value) = False And _
+     IsNull(ActiveSheet.Range("E46").Value) = False And _
+      ActiveSheet.Range("E46").Value <> 0 Then
+    Set EntryRow = EntriesTable.Rows.Add
+    EntryRow.Value("BSCHL") = "40"
+    EntryRow.Value("BUKRS") = ActiveSheet.Range("B46").Value
+    BusinessArea = ActiveSheet.Range("D46").Value
+    vLen = Len(BusinessArea)
+    If vLen = 0 Then
+      ActiveSheet.Range("D46").Activate
+      MsgBox "Please enter Business Area/Cost Center"
+      Set sapVendor = Nothing
+      Set FuncExports = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+    If vLen > 4 Then
+      BusinessArea = Mid(BusinessArea, 1, 4)
+    End If
+    EntryRow.Value("GSBER") = BusinessArea
+    If vLen > 4 Then
+      EntryRow.Value("KOSTL") = ActiveSheet.Range("D46").Value
+    End If
+    EntryRow.Value("KONTO") = ActiveSheet.Range("C46").Value
+    EntryRow.Value("WRBTR") = ActiveSheet.Range("E46").Value
+    EntryRow.Value("ZUONR") = ActiveSheet.Range("G46").Value
+    EntryRow.Value("SGTXT") = ActiveSheet.Range("I46").Value
+    EntryRow.Value("AUFNR") = ActiveSheet.Range("F46").Value
+  End If
+  
+  '  Skip row if amount is blank or 0
+  If IsEmpty(ActiveSheet.Range("E47").Value) = False And _
+     IsNull(ActiveSheet.Range("E47").Value) = False And _
+      ActiveSheet.Range("E47").Value <> 0 Then
+    Set EntryRow = EntriesTable.Rows.Add
+    EntryRow.Value("BSCHL") = "40"
+    EntryRow.Value("BUKRS") = ActiveSheet.Range("B47").Value
+    BusinessArea = ActiveSheet.Range("D47").Value
+    vLen = Len(BusinessArea)
+    If vLen = 0 Then
+      ActiveSheet.Range("D47").Activate
+      MsgBox "Please enter Business Area/Cost Center"
+      Set sapVendor = Nothing
+      Set FuncExports = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+    If vLen > 4 Then
+      BusinessArea = Mid(BusinessArea, 1, 4)
+    End If
+    EntryRow.Value("GSBER") = BusinessArea
+    If vLen > 4 Then
+      EntryRow.Value("KOSTL") = ActiveSheet.Range("D47").Value
+    End If
+    EntryRow.Value("KONTO") = ActiveSheet.Range("C47").Value
+    EntryRow.Value("WRBTR") = ActiveSheet.Range("E47").Value
+    EntryRow.Value("ZUONR") = ActiveSheet.Range("G47").Value
+    EntryRow.Value("SGTXT") = ActiveSheet.Range("I47").Value
+    EntryRow.Value("AUFNR") = ActiveSheet.Range("F47").Value
+  End If
+  
+  '  Skip row if amount is blank or 0
+  If IsEmpty(ActiveSheet.Range("E48").Value) = False And _
+     IsNull(ActiveSheet.Range("E48").Value) = False And _
+      ActiveSheet.Range("E48").Value <> 0 Then
+    Set EntryRow = EntriesTable.Rows.Add
+    EntryRow.Value("BSCHL") = "40"
+    EntryRow.Value("BUKRS") = ActiveSheet.Range("B48").Value
+    BusinessArea = ActiveSheet.Range("D48").Value
+    vLen = Len(BusinessArea)
+    If vLen = 0 Then
+      ActiveSheet.Range("D48").Activate
+      MsgBox "Please enter Business Area/Cost Center"
+      Set sapVendor = Nothing
+      Set FuncExports = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+    If vLen > 4 Then
+      BusinessArea = Mid(BusinessArea, 1, 4)
+    End If
+    EntryRow.Value("GSBER") = BusinessArea
+    If vLen > 4 Then
+      EntryRow.Value("KOSTL") = ActiveSheet.Range("D48").Value
+    End If
+    EntryRow.Value("KONTO") = ActiveSheet.Range("C48").Value
+    EntryRow.Value("WRBTR") = ActiveSheet.Range("E48").Value
+    EntryRow.Value("ZUONR") = ActiveSheet.Range("G48").Value
+    EntryRow.Value("SGTXT") = ActiveSheet.Range("I48").Value
+    EntryRow.Value("AUFNR") = ActiveSheet.Range("F48").Value
+  End If
+  
+  '  Skip row if amount is blank or 0
+  If IsEmpty(ActiveSheet.Range("E49").Value) = False And _
+     IsNull(ActiveSheet.Range("E49").Value) = False And _
+      ActiveSheet.Range("E49").Value <> 0 Then
+    Set EntryRow = EntriesTable.Rows.Add
+    EntryRow.Value("BSCHL") = "40"
+    EntryRow.Value("BUKRS") = ActiveSheet.Range("B49").Value
+    BusinessArea = ActiveSheet.Range("D49").Value
+    vLen = Len(BusinessArea)
+    If vLen = 0 Then
+      ActiveSheet.Range("D49").Activate
+      MsgBox "Please enter Business Area/Cost Center"
+      Set sapVendor = Nothing
+      Set FuncExports = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+    If vLen > 4 Then
+      BusinessArea = Mid(BusinessArea, 1, 4)
+    End If
+    EntryRow.Value("GSBER") = BusinessArea
+    If vLen > 4 Then
+      EntryRow.Value("KOSTL") = ActiveSheet.Range("D49").Value
+    End If
+    EntryRow.Value("KONTO") = ActiveSheet.Range("C49").Value
+    EntryRow.Value("WRBTR") = ActiveSheet.Range("E49").Value
+    EntryRow.Value("ZUONR") = ActiveSheet.Range("G49").Value
+    EntryRow.Value("SGTXT") = ActiveSheet.Range("I49").Value
+    EntryRow.Value("AUFNR") = ActiveSheet.Range("F49").Value
+  End If
+  
+  If PostCheckRequest.Call = True Then
+    If PostCheckRequest.Imports("RCODE").Value = 0 Then
+      ActiveSheet.Range("I63").Value = PostCheckRequest.Imports("BELNR").Value
+    End If
+    Application.Cursor = xlDefault
+    Set MsgTexts = PostCheckRequest.Tables("MSGTXTS")
+    For Each thisRow In MsgTexts.Rows
+      MsgBox thisRow.Value("MSGTEXT")
+    Next
+    
+  Else
+    Application.Cursor = xlDefault
+    MsgBox "Unable to post to SAP"
+  End If
+
+  Set sapVendor = Nothing
+  
+Exit Sub
+EH:
+
+  If Err.Number = "8800" Then
+    Msg = "Vendor " & venNum & " does not exist"
+    MsgBox Msg
+  Else
+    MsgBox Err.Number
+  End If
+  Application.Cursor = xlDefault
+
+End Sub
+
+Public Sub CreateSAPGarnRequest()
+  
+  Dim keepGoing As Boolean
+  Dim Response, venResponse
+  Dim zeroString, vLen, Msg, Val, MyPos, rcode
+  Dim Amount, Amount2 As Currency
+  Dim venNum, cityStateZip, Belnr, MsgStr, NoStr, PostDate As String
+      
+  ' Check to see if document already posted
+  If IsEmpty(ActiveSheet.Range("J1").Value) <> True Then
+    MsgBox "Check request already processed"
+    Exit Sub
+  End If
+  
+  ' Check to see if transaction is balanced
+  Val = ActiveSheet.Range("E7").Value
+  If Application.WorksheetFunction.IsNumber(Val) = False Then
+    MsgBox "Transaction does not balance"
+    Exit Sub
+  End If
+  
+  Amount = ActiveSheet.Range("E7").Value
+  Amount2 = ActiveSheet.Range("G7").Value
+  If Amount <> Amount2 Then
+    MsgBox "Transaction does not balance"
+    Exit Sub
+  End If
+  
+  ' Check to see if invoice number entered
+  If IsEmpty(ActiveSheet.Range("E12").Value) = True Or _
+     ActiveSheet.Range("E12").Value = " " Then
+    ActiveSheet.Range("E12").Activate
+    MsgBox "Please enter invoice number"
+    Exit Sub
+  End If
+
+  ' Check to see if vendor number entered
+  If IsEmpty(ActiveSheet.Range("E10").Value) = True Or _
+     ActiveSheet.Range("E10").Value = " " Then
+    ActiveSheet.Range("E10").Activate
+    MsgBox "Please enter vendor number"
+    Exit Sub
+  End If
+  
+  ' Check to see if company code entered
+  If IsEmpty(ActiveSheet.Range("E13").Value) = True Or _
+     ActiveSheet.Range("E13").Value = " " Then
+    ActiveSheet.Range("E13").Activate
+    MsgBox "Please enter company code"
+    Exit Sub
+  End If
+  
+  ' Check to see if invoice date entered
+  If IsEmpty(ActiveSheet.Range("E11").Value) = True Or _
+     ActiveSheet.Range("E11").Value = " " Then
+    ActiveSheet.Range("E11").Activate
+    MsgBox "Please enter an invoice date"
+    Exit Sub
+  End If
+  
+  ' Check to see if valid invoice date entered
+  If IsDate(ActiveSheet.Range("E11").Value) = False Then
+    ActiveSheet.Range("E11").Activate
+    MsgBox "Please enter a valid invoice date"
+    Exit Sub
+  End If
+  
+  If LogonToSap = 0 Then
+    Application.Cursor = xlDefault
+    Exit Sub
+  End If
+  
+  ' Get vendor information
+  On Error GoTo EH
+  venNum = ActiveSheet.Range("E10").Value
+  vLen = Len(venNum)
+  vLen = 10 - vLen
+  zeroString = String(vLen, "0")
+  venNum = zeroString & venNum
+  Set sapVendor = oBAPI.GetSAPObject("SLBG_Vendor", venNum, ActiveSheet.Range("E13").Value)
+  If sapVendor Is Nothing Then
+    MsgBox "Unable to get vendor information"
+    Application.Cursor = xlDefault
+    Exit Sub
+  End If
+  
+  ' See if vendor is set up as a one-time vendor account
+  If sapVendor.OneTimeAccount = "X" Then
+    ActiveSheet.Range("E10").Activate
+    Msg = "EFT garnishments not allowed for One-time vendor accounts"
+    Set sapVendor = Nothing
+    Application.Cursor = xlDefault
+    Exit Sub
+  Else
+    Msg = sapVendor.Name & Chr(13) & sapVendor.Street & Chr(13) & sapVendor.City & ", " & sapVendor.Region & " " & sapVendor.PostalCode
+    Msg = Msg & Chr(13) & " " & Chr(13) & "Continue?"
+    venResponse = MsgBox(Msg, vbYesNo, "SAP Vendor Address")
+    If venResponse = vbNo Then
+      Set sapVendor = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+  End If
+  
+  ' Get document date
+  DocuDate = ConvertDateToSap(ActiveSheet.Range("E11").Value)
+  
+  ' Check if document may be a duplicate
+  Set CheckDocument = Functions.Add("Z_CHECK_FOR_DOCUMENT")
+  Set FuncExports = CheckDocument.Exports
+  '   Company code
+  Set FieldObj = FuncExports("BUKRS")
+  FieldObj.Value = ActiveSheet.Range("E13").Value
+  '   Vendor
+  Set FieldObj = FuncExports("LIFNR")
+  FieldObj.Value = ActiveSheet.Range("E10").Value
+  '   Currency
+  Set FieldObj = FuncExports("WAERS")
+  FieldObj.Value = "USD"
+  '   Document Date
+  Set FieldObj = FuncExports("BLDAT")
+  FieldObj.Value = DocuDate
+  '   Reference document
+  Set FieldObj = FuncExports("XBLNR")
+  FieldObj.Value = ActiveSheet.Range("E12").Value
+  '   Amount
+  Set FieldObj = FuncExports("WRBTR")
+  FieldObj.Value = ActiveSheet.Range("E7").Value
+  
+  If CheckDocument.Call = True Then
+    If CheckDocument.Imports("RCODE").Value = 1 Then
+      Belnr = CheckDocument.Imports("BELNR").Value
+      Msg = "Invoice may already have been entered as document " & Belnr & Chr(13) & "Continue?"
+      venResponse = MsgBox(Msg, vbYesNo, "Possible Duplicate Posting")
+      If venResponse = vbNo Then
+        Set sapVendor = Nothing
+        Set FuncExports = Nothing
+        Application.Cursor = xlDefault
+        Exit Sub
+      End If
+    End If
+  End If
+  
+  SetGarnExports
+  
+
+  ' Set line item entries
+  Set EntriesTable = PostCheckRequest.Tables("ENTRIES")
+  
+  ' Loop through UsedRegion
+  Set EntriesRange = ActiveSheet.UsedRange
+  For Each thisRow In EntriesRange.Rows
+    If thisRow.Row > 24 Then
+      '  Skip row if amount is blank or 0
+      If IsEmpty(thisRow.Cells(1, 6)) = False And _
+         IsNull(thisRow.Cells(1, 6)) = False And _
+         thisRow.Cells(1, 6).Value <> " " Then
+        If Application.WorksheetFunction.IsNumber(thisRow.Cells(1, 6).Value) = False Then
+          thisRow.Cells(1, 6).Activate
+          MsgBox "Invalid amount"
+          Set sapVendor = Nothing
+          Set FuncExports = Nothing
+          Application.Cursor = xlDefault
+          Exit Sub
+        End If
+        ' Make sure amount is rounded to two decimal places
+        Amount = thisRow.Cells(1, 6).Value
+        Amount = Int(Amount * 100 + 0.5) / 100
+        
+        If Amount <> 0 Then
+          If IsEmpty(thisRow.Cells(1, 1)) = True Or _
+             thisRow.Cells(1, 1).Value = " " Then
+            thisRow.Cells(1, 1).Activate
+            MsgBox "Please enter a posting key"
+            Set sapVendor = Nothing
+            Set FuncExports = Nothing
+            Application.Cursor = xlDefault
+            Exit Sub
+          End If
+          If IsEmpty(thisRow.Cells(1, 3)) = True Or _
+            thisRow.Cells(1, 3).Value = " " Then
+            thisRow.Cells(1, 3).Activate
+            MsgBox "Please enter a business area"
+            Set sapVendor = Nothing
+            Set FuncExports = Nothing
+            Application.Cursor = xlDefault
+            Exit Sub
+          End If
+
+          If thisRow.Cells(1, 1).Value = "21" Or thisRow.Cells(1, 1).Value = "31" Then
+            If IsEmpty(thisRow.Cells(1, 4)) = True Or _
+               thisRow.Cells(1, 4).Value = " " Then
+              thisRow.Cells(1, 4).Value = ActiveSheet.Range("E10").Value
+            ElseIf thisRow.Cells(1, 4).Value <> ActiveSheet.Range("E10").Value Then
+              thisRow.Cells(1, 4).Activate
+              Set sapVendor = Nothing
+              Set FuncExports = Nothing
+              Application.Cursor = xlDefault
+              MsgBox "Multiple vendors not allowed on a garnishment request"
+              Exit Sub
+            End If
+            If IsEmpty(thisRow.Cells(1, 7).Value) = True Or _
+               thisRow.Cells(1, 7).Value = " " Then
+              thisRow.Cells(1, 7).Activate
+              MsgBox "Please enter employee SSN"
+              Set sapVendor = Nothing
+              Set FuncExports = Nothing
+              Application.Cursor = xlDefault
+              Exit Sub
+            End If
+            If IsEmpty(thisRow.Cells(1, 8).Value) = True Or _
+               thisRow.Cells(1, 8).Value = " " Then
+              thisRow.Cells(1, 8).Activate
+              MsgBox "Please enter case number"
+              Set sapVendor = Nothing
+              Set FuncExports = Nothing
+              Application.Cursor = xlDefault
+              Exit Sub
+            End If
+            If IsEmpty(thisRow.Cells(1, 10).Value) = True Or _
+               thisRow.Cells(1, 10).Value = " " Then
+              thisRow.Cells(1, 10).Activate
+              MsgBox "Please enter deduction code"
+              Set sapVendor = Nothing
+              Set FuncExports = Nothing
+              Application.Cursor = xlDefault
+              Exit Sub
+            End If
+          End If
+          Set EntryRow = EntriesTable.Rows.Add
+          EntryRow.Value("BSCHL") = thisRow.Cells(1, 1).Value
+          EntryRow.Value("BUKRS") = thisRow.Cells(1, 2).Value
+          EntryRow.Value("GSBER") = thisRow.Cells(1, 3).Value
+          EntryRow.Value("KOSTL") = thisRow.Cells(1, 5).Value
+          EntryRow.Value("KONTO") = thisRow.Cells(1, 4).Value
+          EntryRow.Value("WRBTR") = Amount
+          EntryRow.Value("ZUONR") = thisRow.Cells(1, 7).Value
+          EntryRow.Value("SGTXT") = thisRow.Cells(1, 8).Value
+          EntryRow.Value("DEDCD") = thisRow.Cells(1, 10).Value
+          EntryRow.Value("ROWNO") = thisRow.Row
+          EntryRow.Value("HRCHK") = "X"
+        End If
+      End If
+    End If
+  Next
+  
+  keepGoing = True
+  While keepGoing
+    If PostCheckRequest.Call = True Then
+      rcode = PostCheckRequest.Imports("RCODE").Value
+      If rcode = 0 Then
+        keepGoing = False
+        ActiveSheet.Range("J1").Value = PostCheckRequest.Imports("BELNR").Value
+        ActiveSheet.Range("B21").Value = PostCheckRequest.Imports("NAME").Value
+        ActiveSheet.Range("B22").Value = PostDate
+        If ActiveSheet.ProtectContents = False Then
+          ActiveSheet.Cells(22, 2).Style.IncludeAlignment = True
+          ActiveSheet.Cells(22, 2).Style.HorizontalAlignment = xlHAlignLeft
+        End If
+      
+        ' Put document number in proper Company Code field
+        If ActiveSheet.Range("E13").Value = "5100" Then
+          ActiveSheet.Range("J2").Value = ActiveSheet.Range("J1").Value
+        ElseIf ActiveSheet.Range("E13").Value = "5110" Then
+          ActiveSheet.Range("J3").Value = ActiveSheet.Range("J1").Value
+        ElseIf ActiveSheet.Range("E13").Value = "5120" Then
+          ActiveSheet.Range("J4").Value = ActiveSheet.Range("J1").Value
+        End If
+        
+        ' See if any cross company documents
+        Set CrossCCDocs = PostCheckRequest.Tables("CCDOCS")
+        For Each thisRow In CrossCCDocs.Rows
+          If thisRow.Value("BUKRS") = "5100" Then
+            ActiveSheet.Range("J2").Value = thisRow.Value("BELNR")
+          ElseIf thisRow.Value("BUKRS") = "5110" Then
+            ActiveSheet.Range("J3").Value = thisRow.Value("BELNR")
+          ElseIf thisRow.Value("BUKRS") = "5120" Then
+            ActiveSheet.Range("J4").Value = thisRow.Value("BELNR")
+          End If
+        Next
+    
+        Application.Cursor = xlDefault
+        
+        Set MsgTexts = PostCheckRequest.Tables("MSGTXTS")
+        For Each thisRow In MsgTexts.Rows
+          MsgStr = thisRow.Value("MSGTEXT")
+          MsgBox MsgStr
+        Next
+        
+      ElseIf rcode < 0 Then
+      
+        Set ItemErrors = PostCheckRequest.Tables("ITMERRORS")
+        If ItemErrors.Rows.Count > 0 Then
+          Msg = "The following warnings were found.  Continue?"
+          For Each thisRow In ItemErrors.Rows
+            MsgStr = thisRow.Value("MSGTEXT")
+            Msg = Msg & Chr(13) & MsgStr
+          Next
+          Application.Cursor = xlDefault
+          Response = MsgBox(Msg, vbYesNo, "Warnings")
+          If Response = vbNo Then
+            keepGoing = False
+          Else
+          
+            Application.Cursor = xlWait
+            
+            For Each EntryRow In EntriesTable.Rows
+              EntryRow.Value("HRCHK") = " "
+            Next
+          
+            SetGarnExports
+            
+          End If
+          
+        Else
+        
+          keepGoing = False
+          Application.Cursor = xlDefault
+          MsgBox "Unable to post to SAP"
+          
+        End If
+      
+      Else
+      
+        keepGoing = False
+        
+        Set MsgTexts = PostCheckRequest.Tables("MSGTXTS")
+        Set ItemErrors = PostCheckRequest.Tables("ITMERRORS")
+        Msg = "The following errors/warnings were found."
+        If ItemErrors.Rows.Count > 0 Then
+          For Each thisRow In ItemErrors.Rows
+            MsgStr = thisRow.Value("MSGTEXT")
+            Msg = Msg & Chr(13) & MsgStr
+          Next
+        End If
+        For Each thisRow In MsgTexts.Rows
+          MsgStr = thisRow.Value("MSGTEXT")
+          Msg = Msg & Chr(13) & MsgStr
+        Next
+        MsgBox Msg
+        
+        Application.Cursor = xlDefault
+     
+      End If
+      
+    Else
+      keepGoing = False
+      Application.Cursor = xlDefault
+      MsgBox "Unable to post to SAP"
+    End If
+  Wend
+
+  Set sapVendor = Nothing
+  
+Exit Sub
+EH:
+
+  If Err.Number = "8800" Then
+    Msg = "Vendor " & venNum & " does not exist"
+    MsgBox Msg
+  Else
+    MsgBox Err.Number & " " & Err.Description
+  End If
+  Application.Cursor = xlDefault
+
+End Sub
+
+Public Sub SetGarnExports()
+
+  Set FuncExports = Nothing
+  
+  Set PostCheckRequest = Functions.Add("Z_POST_GARNISHMENT")
+  ' Put export objects in local object
+  Set FuncExports = PostCheckRequest.Exports
+  
+  ' Set export parameters
+  '   Company code
+  Set FieldObj = FuncExports("BUKRS")
+  FieldObj.Value = ActiveSheet.Range("E13").Value
+  '   Document type
+  Set FieldObj = FuncExports("BLART")
+  FieldObj.Value = "GN"
+  '   Document date
+  Set FieldObj = FuncExports("BLDAT")
+  FieldObj.Value = DocuDate
+
+  '   Posting date = current date
+  Set FieldObj = FuncExports("BUDAT")
+  If IsEmpty(ActiveSheet.Range("J29").Value) = True Or _
+     ActiveSheet.Range("J29").Value = " " Then
+    PostDate = Date
+    SapDate = ConvertDateToSap(Date)
+  Else
+    PostDate = ActiveSheet.Range("J29").Value
+    SapDate = ConvertDateToSap(ActiveSheet.Range("J29").Value)
+  End If
+
+  '   Reference document
+  Set FieldObj = FuncExports("XBLNR")
+  FieldObj.Value = ActiveSheet.Range("E12").Value
+  '   Header text
+  Set FieldObj = FuncExports("BKTXT")
+  FieldObj.Value = ActiveSheet.Range("H10").Value
+  
+End Sub
+
+Public Function LogonToSap()
+  
+  Application.Cursor = xlWait
+  
+  LogonToSap = 1
+  
+  On Error GoTo BAPICreate
+  If oBAPI.Connection.IsConnected <> 1 Then
+    
+    On Error GoTo 0
+    On Error Resume Next
+    
+    ' Create the connection.
+
+    oBAPI.Connection.Language = "EN"
+    oBAPI.Connection.GroupName = "PR1 [PR1_servers]"
+    oBAPI.Connection.System = "3"
+    oBAPI.Connection.Client = "500"
+  
+    ' Log on.
+    If oBAPI.Connection.Logon(0, False) <> True Then
+      MsgBox "Cannot log on!"
+      Application.Cursor = xlDefault
+      LogonToSap = 0
+      Exit Function
+    End If
+    
+    Application.Cursor = xlWait
+    
+  Else
+  
+    On Error GoTo 0
+    On Error Resume Next
+    
+  End If
+  
+  ' Get function object
+  Set Functions = CreateObject("SAP.Functions")
+  ' Establish function connection
+  Functions.Connection = oBAPI.Connection
+  
+Exit Function
+BAPICreate:
+  ' Create the Control.
+  Set oBAPI = CreateObject("SAP.BAPI.1")
+    
+  Resume
+
+End Function
+
+Public Function ConvertDateToSap(MyDate)
+
+  ConvertDateToSap = ""
+  ConvertDateToSap = Year(MyDate)
+  TempInt = Month(MyDate)
+  If TempInt < 10 Then
+    ConvertDateToSap = ConvertDateToSap & "0" & TempInt
+  Else
+    ConvertDateToSap = ConvertDateToSap & TempInt
+  End If
+  TempInt = Day(MyDate)
+  If TempInt < 10 Then
+    ConvertDateToSap = ConvertDateToSap & "0" & TempInt
+  Else
+    ConvertDateToSap = ConvertDateToSap & TempInt
+  End If
+
+End Function
+
+Sub FixJEButton()
+'
+' FixButton Macro
+' Macro recorded 12/12/2001 by MILLSRL
+'
+
+    Dim Sheet As Worksheet
+'
+    For Each Sheet In ActiveWorkbook.Sheets
+      On Error GoTo NextSheet
+      ' ActiveSheet.Shapes("CommandButton1").Select
+      Application.CommandBars("Control Toolbox").Visible = True
+      Sheet.Activate
+      If ActiveSheet.Range("E5").Value = "Debit" Or _
+         ActiveSheet.Range("E5").Value = "DEBIT" Then
+        Sheet.Shapes("CommandButton1").Select
+        Selection.Cut
+        Application.CommandBars("Control Toolbox").Visible = False
+        Application.CommandBars("Forms").Visible = True
+        ' ActiveSheet.Buttons.Add(64.5, 18.75, 111, 57).Select
+        Sheet.Buttons.Add(64.5, 18.75, 111, 57).Select
+        Selection.OnAction = "CreateSAPJournalEntry"
+        ' ActiveSheet.Shapes("Button 2").Select
+        Selection.Characters.Text = "Post To SAP"
+        With Selection.Font
+            .Name = "Arial"
+            .FontStyle = "Bold"
+            .Size = 12
+            .Strikethrough = False
+            .Superscript = False
+            .Subscript = False
+            .OutlineFont = False
+            .Shadow = False
+            .Underline = xlUnderlineStyleNone
+            .ColorIndex = xlAutomatic
+        End With
+        Range("C4").Select
+        Application.CommandBars("Forms").Visible = False
+      End If
+NextSheet:
+      If Application.CommandBars("Control Toolbox").Visible = True Then
+        Application.CommandBars("Control Toolbox").Visible = False
+      End If
+    Next
+End Sub
+
+Sub FixCRButton()
+'
+' FixCRButton Macro
+' Macro recorded 12/12/2001 by MILLSRL
+'
+    Dim Sheet As Worksheet
+'
+    For Each Sheet In ActiveWorkbook.Sheets
+      On Error GoTo NextSheet1
+      Sheet.Activate
+      Application.CommandBars("Control Toolbox").Visible = True
+      If ActiveSheet.Range("E6").Value = "Debit" Or _
+         ActiveSheet.Range("E6").Value = "DEBIT" Then
+        ActiveSheet.Unprotect
+        ActiveSheet.Shapes("CommandButton1").Select
+        Selection.Cut
+        Application.CommandBars("Control Toolbox").Visible = False
+        Application.CommandBars("Forms").Visible = True
+        ActiveSheet.Buttons.Add(474, 67.5, 138, 65.25).Select
+        Selection.OnAction = "CreateSAPCheckRequest"
+        ' ActiveSheet.Shapes("Button 5").Select
+        Selection.Characters.Text = "Post To SAP"
+        With Selection.Font
+            .Name = "Arial"
+            .FontStyle = "Bold"
+            .Size = 12
+            .Strikethrough = False
+            .Superscript = False
+            .Subscript = False
+            .OutlineFont = False
+            .Shadow = False
+            .Underline = xlUnderlineStyleNone
+            .ColorIndex = xlAutomatic
+        End With
+        Application.CommandBars("Forms").Visible = False
+        ActiveSheet.Protect
+      End If
+NextSheet1:
+    On Error Resume Next
+    If Application.CommandBars("Control Toolbox").Visible = True Then
+      Application.CommandBars("Control Toolbox").Visible = False
+    End If
+    Next
+End Sub
+ 
+ Sub ClearMMData()
+ 
+   Set EntriesRange = ActiveSheet.UsedRange
+       
+   For Each thisRow In EntriesRange.Rows
+     If thisRow.Row > 3 Then
+       thisRow.ClearContents
+     End If
+   Next
+
+ End Sub
+
+ Sub PostMMData()
+ 
+   Dim Material, Plant As String
+
+   Set EntriesRange = ActiveSheet.UsedRange
+       
+   ChangesFound = False
+   
+   For Each thisRow In EntriesRange.Rows
+     If thisRow.Row > 3 Then
+        If IsEmpty(thisRow.Cells(1, 1)) = False And _
+           IsNull(thisRow.Cells(1, 1)) = False And _
+           thisRow.Cells(1, 1).Value <> "" And _
+           thisRow.Cells(1, 1).Value <> " " And _
+           IsEmpty(thisRow.Cells(1, 2)) = False And _
+           IsNull(thisRow.Cells(1, 2)) = False And _
+           thisRow.Cells(1, 2).Value <> "" And _
+           thisRow.Cells(1, 2).Value <> " " Then
+            If (IsEmpty(thisRow.Cells(1, 4)) = False And _
+               thisRow.Cells(1, 4).Value <> "" And _
+               thisRow.Cells(1, 4).Value <> " ") Or _
+               (IsEmpty(thisRow.Cells(1, 5)) = False And _
+               thisRow.Cells(1, 5).Value <> "" And _
+               thisRow.Cells(1, 5).Value <> " ") Or _
+               (IsEmpty(thisRow.Cells(1, 6)) = False And _
+               thisRow.Cells(1, 6).Value <> "" And _
+               thisRow.Cells(1, 6).Value <> " ") Or _
+               (IsEmpty(thisRow.Cells(1, 7)) = False And _
+               thisRow.Cells(1, 7).Value <> "" And _
+               thisRow.Cells(1, 7).Value <> " ") Then
+              ChangesFound = True
+            ElseIf (IsEmpty(thisRow.Cells(1, 8)) = False And _
+                    thisRow.Cells(1, 8).Value <> "" And _
+                    thisRow.Cells(1, 8).Value <> " ") Or _
+                   (IsEmpty(thisRow.Cells(1, 9)) = False And _
+                    thisRow.Cells(1, 9).Value <> "" And _
+                    thisRow.Cells(1, 9).Value <> " ") Or _
+                   (IsEmpty(thisRow.Cells(1, 10)) = False And _
+                    thisRow.Cells(1, 10).Value <> "" And _
+                    thisRow.Cells(1, 10).Value <> " ") Or _
+                   (IsEmpty(thisRow.Cells(1, 11)) = False And _
+                    thisRow.Cells(1, 11).Value <> "" And _
+                    thisRow.Cells(1, 11).Value <> " ") Then
+              ChangesFound = True
+            End If
+            If (IsEmpty(thisRow.Cells(1, 3)) = False And _
+               thisRow.Cells(1, 3).Value <> "" And _
+               thisRow.Cells(1, 3).Value <> " ") Then
+              If thisRow.Cells(1, 3).Value = "D" Or thisRow.Cells(1, 3).Value = "d" Then
+                thisRow.Cells(1, 3).Activate
+                MsgBox "Can not change status to D"
+                Application.Cursor = xlDefault
+                Exit Sub
+              Else
+                ChangesFound = True
+            End If
+          End If
+        End If
+     End If
+   Next
+
+   If ChangesFound Then
+     
+     If LogonToSap = 0 Then
+       Application.Cursor = xlDefault
+       Exit Sub
+     End If
+  
+     For Each thisRow In EntriesRange.Rows
+       If thisRow.Row > 3 Then
+         ChangesFound = False
+         AttrsFound = False
+         Errors = False
+         
+         If IsEmpty(thisRow.Cells(1, 1)) = False And _
+            IsNull(thisRow.Cells(1, 1)) = False And _
+            thisRow.Cells(1, 1).Value <> "" And _
+            thisRow.Cells(1, 1).Value <> " " And _
+            IsEmpty(thisRow.Cells(1, 2)) = False And _
+            IsNull(thisRow.Cells(1, 2)) = False And _
+            thisRow.Cells(1, 2).Value <> "" And _
+            thisRow.Cells(1, 2).Value <> " " Then
+            
+           ' Create material
+           Material = thisRow.Cells(1, 2).Value
+           Plant = thisRow.Cells(1, 1).Value
+           
+           On Error Resume Next
+           
+           CheckAttribute thisRow, Material, Plant, 3, "MMSTA", False
+           
+           CheckAttribute thisRow, Material, Plant, 4, "BSTMI", True
+           
+           CheckAttribute thisRow, Material, Plant, 5, "BSTRF", True
+           
+           CheckAttribute thisRow, Material, Plant, 6, "BSTMA", True
+           
+           CheckAttribute thisRow, Material, Plant, 7, "PLIFZ", True
+           
+           If (IsEmpty(thisRow.Cells(1, 8)) = False And _
+               thisRow.Cells(1, 8).Value <> "" And _
+               thisRow.Cells(1, 8).Value <> " ") Or _
+              (IsEmpty(thisRow.Cells(1, 9)) = False And _
+               thisRow.Cells(1, 9).Value <> "" And _
+               thisRow.Cells(1, 9).Value <> " ") Or _
+              (IsEmpty(thisRow.Cells(1, 10)) = False And _
+               thisRow.Cells(1, 10).Value <> "" And _
+               thisRow.Cells(1, 10).Value <> " ") Or _
+              (IsEmpty(thisRow.Cells(1, 11)) = False And _
+               thisRow.Cells(1, 11).Value <> "" And _
+               thisRow.Cells(1, 11).Value <> " ") Then
+               
+             If Not Errors Then
+             
+               If Not ChangesFound Then
+             
+                 CreateMaterial Material, Plant
+                 If sapMaterial Is Nothing Then
+                   Exit Sub
+                 End If
+           
+                 ChangesFound = True
+               
+                 On Error Resume Next
+           
+               End If
+           
+               If Not AttrsFound Then
+                 Set oReturn = oBAPI.DimAs(sapMaterial, "SetAttributes", "Return")
+               End If
+               
+               sapMaterial.EditMemoLine Vendor:=thisRow.Cells(1, 8).Value, _
+                                        VendorName:=thisRow.Cells(1, 9).Value, _
+                                        Contract:=thisRow.Cells(1, 10).Value, _
+                                        MiscellaneousText:=thisRow.Cells(1, 11).Value, _
+                                        Return:=oReturn
+               For Each EntryRow In oReturn.Rows
+                 Errors = True
+                 thisRow.Cells(1, 1).Activate
+                 MsgBox EntryRow.Value("MESSAGE")
+               Next
+             
+             End If
+             
+           End If
+            
+           If Errors Then
+             If AttrsFound Then
+               Set oAttrFlags = Nothing
+               Set oAttrValues = Nothing
+               Set oReturn = Nothing
+               AttrsFound = False
+             End If
+           End If
+           
+           If AttrsFound Then
+             
+             sapMaterial.SetAttributes AttributeFlags:=oAttrFlags, _
+                                       AttributeValues:=oAttrValues, _
+                                       Return:=oReturn
+             For Each EntryRow In oReturn.Rows
+               Errors = True
+               thisRow.Cells(1, 1).Activate
+               MsgBox EntryRow.Value("MESSAGE")
+             Next
+             
+             Set oAttrFlags = Nothing
+             Set oAttrValues = Nothing
+             Set oReturn = Nothing
+           
+           End If
+           
+           If ChangesFound Then
+             Set sapMaterial = Nothing
+           End If
+           
+           If Errors Then
+             Application.Cursor = xlDefault
+             Exit Sub
+          End If
+           
+         End If
+       End If
+     Next
+    
+     Application.Cursor = xlDefault
+
+     MsgBox "All materials updated"
+     
+     On Error Resume Next
+  
+   End If
+   
+ Exit Sub
+ 
+EH:
+
+  MsgBox Err.Number & " " & Err.Description
+  Application.Cursor = xlDefault
+  
+End Sub
+
+Sub CreateMaterial(Material, Plant)
+
+  Dim mLen
+  Dim zeroString As String
+
+  Set sapMaterial = Nothing
+  
+  On Error GoTo EH
+  
+  ' Material = thisRow.Cells(1, 2).Value
+  If IsNumeric(Material) Then
+    mLen = Len(Material)
+    mLen = 18 - mLen
+    zeroString = String(mLen, "0")
+    Material = zeroString & Material
+  End If
+  ' Plant = thisRow.Cells(1, 1).Value
+  Set sapMaterial = oBAPI.GetSAPObject("EGRPlantMaterial", Material, Plant)
+           
+  Exit Sub
+  
+EH:
+
+  MsgBox Err.Number & " " & Err.Description
+  Application.Cursor = xlDefault
+  
+End Sub
+
+Sub CreateAttrStrucs()
+
+  Set oAttrFlags = oBAPI.DimAs(sapMaterial, "SetAttributes", "AttributeFlags")
+  Set oAttrValues = oBAPI.DimAs(sapMaterial, "SetAttributes", "AttributeValues")
+  Set oReturn = oBAPI.DimAs(sapMaterial, "SetAttributes", "Return")
+  oAttrFlags.Value("MMSTA") = " "
+  oAttrFlags.Value("BSTMI") = " "
+  oAttrFlags.Value("BSTMA") = " "
+  oAttrFlags.Value("BSTRF") = " "
+  oAttrFlags.Value("PLIFZ") = " "
+               
+End Sub
+
+Sub CheckAttribute(oRow, Material, Plant, Col, Attr As String, Numeric As Boolean)
+           
+  If (IsEmpty(oRow.Cells(1, Col)) = False And _
+      oRow.Cells(1, Col).Value <> "" And _
+      oRow.Cells(1, Col).Value <> " ") Then
+               
+    If Numeric Then
+      If Application.WorksheetFunction.IsNumber(oRow.Cells(1, Col).Value) = False Then
+        oRow.Cells(1, Col).Activate
+        MsgBox "Invalid quantity"
+        Errors = True
+      End If
+    End If
+             
+    If Not Errors Then
+             
+      If Not ChangesFound Then
+             
+        CreateMaterial Material, Plant
+        If sapMaterial Is Nothing Then
+          Exit Sub
+        End If
+           
+        ChangesFound = True
+               
+        On Error Resume Next
+           
+      End If
+           
+      If Attr = "MMSTA" And sapMaterial.MMPPStatus = "D" Then
+      
+        MsgBox "Can not change status from D"
+        Errors = True
+        Exit Sub
+
+      End If
+        
+      If Not AttrsFound Then
+             
+        CreateAttrStrucs
+        AttrsFound = True
+               
+      End If
+             
+      oAttrFlags.Value(Attr) = "X"
+      If Attr = "MMSTA" And _
+        (oRow.Cells(1, Col).Value = "X" Or oRow.Cells(1, Col).Value = "x") Then
+        oAttrValues.Value(Attr) = "  "
+      Else
+        oAttrValues.Value(Attr) = oRow.Cells(1, Col).Value
+      End If
+             
+    End If
+             
+  End If
+
+End Sub
+
+Sub PrintPOData()
+ 
+  Dim PurchaseOrder, MsgStr As String
+  Dim mLen
+  Dim zeroString As String
+
+  ' Check to see if printer entered
+  If IsEmpty(ActiveSheet.Range("G1").Value) = True Or _
+     ActiveSheet.Range("G1").Value = " " Then
+    MsgBox "Please enter printer name"
+    Exit Sub
+  End If
+  
+  Set EntriesRange = ActiveSheet.UsedRange
+       
+  ChangesFound = False
+   
+  For Each thisRow In EntriesRange.Rows
+    If thisRow.Row > 1 Then
+       If IsEmpty(thisRow.Cells(1, 1)) = False And _
+          IsNull(thisRow.Cells(1, 1)) = False And _
+          thisRow.Cells(1, 1).Value <> "" And _
+          thisRow.Cells(1, 1).Value <> " " Then
+             ChangesFound = True
+       End If
+    End If
+  Next
+   
+  If ChangesFound Then
+     
+    If LogonToSap = 0 Then
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+  
+    Errors = False
+    For Each thisRow In EntriesRange.Rows
+     
+      If thisRow.Row > 1 Then
+         
+        If IsEmpty(thisRow.Cells(1, 1)) = False And _
+           IsNull(thisRow.Cells(1, 1)) = False And _
+           thisRow.Cells(1, 1).Value <> "" And _
+           thisRow.Cells(1, 1).Value <> " " Then
+             
+          If IsEmpty(thisRow.Cells(1, 2)) = True Or _
+             IsNull(thisRow.Cells(1, 2)) = True Or _
+             thisRow.Cells(1, 2).Value = " " Then
+            thisRow.Cells(1, 2).Activate
+            MsgBox "An invoice date must be entered"
+            Application.Cursor = xlDefault
+            Exit Sub
+          End If
+        
+          ' Create purchase order
+          PurchaseOrder = thisRow.Cells(1, 1).Value
+           
+          On Error Resume Next
+           
+          CreatePurchaseOrder PurchaseOrder, thisRow
+           
+          If Errors Then
+            Application.Cursor = xlDefault
+            Exit Sub
+          End If
+          
+        End If
+         
+      End If
+       
+    Next
+    
+    Set FuncExports = Nothing
+  
+    Set PrintBarcodes = Functions.Add("Z_PRINT_PO_BARCODES")
+    ' Put export objects in local object
+    Set FuncExports = PrintBarcodes.Exports
+  
+    ' Set export parameters
+    '   Printer
+    Set FieldObj = FuncExports("PRINTER")
+    FieldObj.Value = ActiveSheet.Range("G1").Value
+  
+    ' Set line item entries
+    Set EntriesTable = PrintBarcodes.Tables("PURCHASEORDERS")
+  
+    For Each thisRow In EntriesRange.Rows
+     
+      If thisRow.Row > 1 Then
+         
+        If IsEmpty(thisRow.Cells(1, 1)) = False And _
+           IsNull(thisRow.Cells(1, 1)) = False And _
+           thisRow.Cells(1, 1).Value <> "" And _
+           thisRow.Cells(1, 1).Value <> " " Then
+            
+          ' Get invoice date
+          DocuDate = ConvertDateToSap(thisRow.Cells(1, 2).Value)
+  
+          PurchaseOrder = thisRow.Cells(1, 1).Value
+          If IsNumeric(PurchaseOrder) Then
+            mLen = Len(PurchaseOrder)
+            mLen = 10 - mLen
+            zeroString = String(mLen, "0")
+            PurchaseOrder = zeroString & PurchaseOrder
+          End If
+  
+         ' Add table entry
+          Set EntryRow = EntriesTable.Rows.Add
+          EntryRow.Value("PURCHASEORDER") = PurchaseOrder
+          EntryRow.Value("INVOICEDATE") = DocuDate
+          EntryRow.Value("CREDITMEMO") = thisRow.Cells(1, 3).Value
+    
+        End If
+         
+      End If
+       
+    Next
+    
+    If PrintBarcodes.Call = True Then
+      Application.Cursor = xlDefault
+      If PrintBarcodes.Imports("RCODE").Value <> 0 Then
+        MsgStr = PrintBarcodes.Imports("MSGTEXT").Value
+        MsgBox MsgStr
+      Else
+        MsgBox "Purchase order documents successfully sent to SAP for printing"
+      End If
+    Else
+      Application.Cursor = xlDefault
+      MsgBox "Unable to print barcodes in SAP"
+    End If
+
+    On Error Resume Next
+  
+  End If
+   
+Exit Sub
+ 
+EH:
+
+  MsgBox Err.Number & " " & Err.Description
+  Application.Cursor = xlDefault
+  
+End Sub
+
+
+Sub CreatePurchaseOrder(PurchaseOrder, oRow)
+
+  Dim mLen
+  Dim zeroString As String
+
+  Set sapPurchaseOrder = Nothing
+  
+  On Error GoTo EH
+  
+  If IsNumeric(PurchaseOrder) Then
+    mLen = Len(PurchaseOrder)
+    mLen = 10 - mLen
+    zeroString = String(mLen, "0")
+    PurchaseOrder = zeroString & PurchaseOrder
+  End If
+  
+  Set sapPurchaseOrder = oBAPI.GetSAPObject("PurchaseOrder", PurchaseOrder)
+           
+  Set sapPurchaseOrder = Nothing
+  
+  Exit Sub
+  
+EH:
+
+  Errors = True
+  oRow.Cells(1, 1).Activate
+  If Err.Number = 8795 Then
+    MsgBox "Purchase order " & PurchaseOrder & " does not exist"
+  Else
+    MsgBox Err.Number & " " & Err.Description
+  End If
+  Application.Cursor = xlDefault
+  
+End Sub
+
+  Sub ClearPOData()
+ 
+   Set EntriesRange = ActiveSheet.UsedRange
+       
+   For Each thisRow In EntriesRange.Rows
+     If thisRow.Row > 1 Then
+       thisRow.ClearContents
+     End If
+   Next
+
+ End Sub
+ 
+ Sub CheckPOData()
+ 
+   Dim PurchaseOrder As String
+
+   Set EntriesRange = ActiveSheet.UsedRange
+       
+   ChangesFound = False
+   
+   For Each thisRow In EntriesRange.Rows
+     If thisRow.Row > 1 Then
+        If IsEmpty(thisRow.Cells(1, 1)) = False And _
+           IsNull(thisRow.Cells(1, 1)) = False And _
+           thisRow.Cells(1, 1).Value <> "" And _
+           thisRow.Cells(1, 1).Value <> " " Then
+              ChangesFound = True
+        End If
+     End If
+   Next
+
+   If ChangesFound Then
+     
+     If LogonToSap = 0 Then
+       Application.Cursor = xlDefault
+       Exit Sub
+     End If
+  
+     Errors = False
+     For Each thisRow In EntriesRange.Rows
+     
+       If thisRow.Row > 1 Then
+         
+         If IsEmpty(thisRow.Cells(1, 1)) = False And _
+            IsNull(thisRow.Cells(1, 1)) = False And _
+            thisRow.Cells(1, 1).Value <> "" And _
+            thisRow.Cells(1, 1).Value <> " " Then
+            
+           ' Create purchase order
+           PurchaseOrder = thisRow.Cells(1, 1).Value
+           
+           On Error Resume Next
+           
+           CreatePurchaseOrder PurchaseOrder, thisRow
+           
+           If Errors Then
+             Application.Cursor = xlDefault
+             Exit Sub
+           End If
+          
+         End If
+         
+       End If
+       
+     Next
+    
+     Application.Cursor = xlDefault
+
+     MsgBox "All purchase orders exist"
+     
+     On Error Resume Next
+  
+   End If
+   
+ Exit Sub
+ 
+EH:
+
+  MsgBox Err.Number & " " & Err.Description
+  Application.Cursor = xlDefault
+  
+End Sub
+
+Sub ClearExcessRowsAndColumns()
+   Dim ar As Range, r As Double, c As Double, tr As Double, tc As Double
+   Dim wksWks As Worksheet, ur As Range, arCount As Integer, i As Integer
+   Dim blProtCont As Boolean, blProtScen As Boolean, blProtDO As Boolean
+   Dim shp As Shape
+
+   On Error Resume Next
+   For Each wksWks In ActiveWorkbook.Worksheets
+      Err.Clear
+      'Store worksheet protection settings and unprotect if protected.
+      blProtCont = wksWks.ProtectContents
+      blProtDO = wksWks.ProtectDrawingObjects
+      blProtScen = wksWks.ProtectScenarios
+      wksWks.Unprotect ""
+      If Err.Number = 1004 Then
+         Err.Clear
+         MsgBox "'" & wksWks.Name & _
+               "' is protected with a password and cannot be checked." _
+               , vbInformation
+      Else
+         Application.StatusBar = "Checking " & wksWks.Name & ", Please Wait..."
+         r = 0
+         c = 0
+
+         'Determine if the sheet contains both formulas and constants
+         Set ur = Union(wksWks.UsedRange.SpecialCells(xlCellTypeConstants), _
+               wksWks.UsedRange.SpecialCells(xlCellTypeFormulas))
+         'If both fails, try constants only
+         If Err.Number = 1004 Then
+            Err.Clear
+            Set ur = wksWks.UsedRange.SpecialCells(xlCellTypeConstants)
+         End If
+         'If constants fails then set it to formulas
+         If Err.Number = 1004 Then
+            Err.Clear
+            Set ur = wksWks.UsedRange.SpecialCells(xlCellTypeFormulas)
+         End If
+         'If there is still an error then the worksheet is empty
+         If Err.Number <> 0 Then
+            Err.Clear
+            If wksWks.UsedRange.Address <> "$A$1" Then
+               ur.EntireRow.Delete
+            Else
+               Set ur = Nothing
+            End If
+         End If
+         'On Error GoTo 0
+         If Not ur Is Nothing Then
+            arCount = ur.Areas.Count
+            'determine the last column and row that contains data or formula
+            For Each ar In ur.Areas
+               i = i + 1
+               tr = ar.Range("A1").Row + ar.Rows.Count - 1
+               tc = ar.Range("A1").Column + ar.Columns.Count - 1
+               If tc > c Then c = tc
+               If tr > r Then r = tr
+            Next
+            'Determine the area covered by shapes
+            'so we don't remove shading behind shapes
+            For Each shp In wksWks.Shapes
+               tr = shp.BottomRightCell.Row
+               tc = shp.BottomRightCell.Column
+               If tc > c Then c = tc
+               If tr > r Then r = tr
+            Next
+            Application.StatusBar = "Clearing Excess Cells in " & _
+                  wksWks.Name & ", Please Wait..."
+            Set ur = wksWks.Rows(r + 1 & ":" & wksWks.Rows.Count)
+               ur.Clear
+            'Reset row height which can also cause the lastcell to be innacurate
+            ur.EntireRow.RowHeight = _
+                  wksWks.StandardHeight
+            Set ur = wksWks.Range(wksWks.Cells(1, c + 1), _
+                  wksWks.Cells(1, 256)).EntireColumn
+            'Reset column width which can also cause the lastcell to be innacurate
+            ur.EntireColumn.ColumnWidth = _
+                  wksWks.StandardWidth
+         End If
+      End If
+      'Reset protection.
+      wksWks.Protect "", blProtDO, blProtCont, blProtScen
+      Err.Clear
+   Next
+
+End Sub
+
+Sub z_view_images()
+  
+  If LogonToSap = 0 Then
+    Application.Cursor = xlDefault
+    Exit Sub
+  End If
+  
+  On Error Resume Next
+
+  Set CheckDocument = Functions.Add("ZTESTBK")
+  Set FuncExports = CheckDocument.Exports
+
+  Set FieldObj = FuncExports("BARCODE")
+  FieldObj.Value = ActiveSheet.Range("C1").Value
+
+  Set FieldObj = FuncExports("CONTREP")
+  FieldObj.Value = ActiveSheet.Range("C2").Value
+
+  Set FieldObj = FuncExports("ARCHIV_DOC_ID")
+  FieldObj.Value = ActiveSheet.Range("C3").Value
+
+Set EntriesTable = CheckDocument.Tables("ENTRIES")
+
+          Set EntryRow = EntriesTable.Rows.Add
+          KeyRowFound = True
+          EntryRow.Value("BUKRS") = "5100"
+
+If CheckDocument.Call = True Then
+MsgBox CheckDocument.Imports("RETURN").Value
+End If
+  
+  Application.Cursor = xlDefault
+
+End Sub
+
+Public Sub CreateSAPJournalEntry2()
+  
+Dim filename
+Dim objkey
+  
+'  Call ClearExcessRowsAndColumns
+  
+  ' Check to see if document already posted
+  If IsEmpty(ActiveSheet.Range("I1").Value) <> True Then
+    MsgBox "Document already posted"
+    Exit Sub
+  End If
+  
+  If LogonToSap = 0 Then
+    Application.Cursor = xlDefault
+    Exit Sub
+  End If
+  
+  On Error Resume Next
+  
+  ' If a recurring entry document type call different function
+  Select Case UCase(ActiveSheet.Range("D14").Value)
+  Case "SC"
+    RecurringEntry = True
+    Set PostJournal = Functions.Add("Z_POST_RECURRING_ENTRY2")
+  Case "DR"
+    RecurringEntry = False
+    Set PostJournal = Functions.Add("")
+  Case "SA"
+    RecurringEntry = False
+    Set PostJournal = Functions.Add("Z_POST_JE_CUSTADJ2")
+  Case Else
+    RecurringEntry = False
+    Set PostJournal = Functions.Add("Z_POST_JE_CUSTADJ2")
+  End Select
+  
+  ' Put export objects in local object
+  Set FuncExports = PostJournal.Exports
+  
+  ' Set export parameters
+  '   Company code
+  Set FieldObj = FuncExports("BUKRS")
+  FieldObj.Value = ActiveSheet.Range("D18").Value
+  '   Document type
+  Set FieldObj = FuncExports("BLART")
+  FieldObj.Value = ActiveSheet.Range("D14").Value
+  If RecurringEntry = True Then
+    '   First run on
+    If IsEmpty(ActiveSheet.Range("G17")) = True Or _
+       IsNull(ActiveSheet.Range("G17")) = True Or _
+       ActiveSheet.Range("G17").Value = " " Then
+      ActiveSheet.Range("G17").Activate
+      MsgBox "First run on date required for Recurring Entry"
+      Set FuncExports = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+    Set FieldObj = FuncExports("DBBDT")
+    SapDate = ConvertDateToSap(ActiveSheet.Range("G17").Value)
+    FieldObj.Value = SapDate
+    
+    '   Last run on
+    If IsEmpty(ActiveSheet.Range("G18")) = True Or _
+       IsNull(ActiveSheet.Range("G18")) = True Or _
+       ActiveSheet.Range("G18").Value = " " Then
+      ActiveSheet.Range("G18").Activate
+      MsgBox "Last run on date required for Recurring Entry"
+      Set FuncExports = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+    Set FieldObj = FuncExports("DBEDT")
+    SapDate = ConvertDateToSap(ActiveSheet.Range("G18").Value)
+    FieldObj.Value = SapDate
+    
+    '   Run schedule
+    If IsEmpty(ActiveSheet.Range("G19")) = True Or _
+       IsNull(ActiveSheet.Range("G19")) = True Or _
+       ActiveSheet.Range("G19").Value = " " Then
+      ActiveSheet.Range("G19").Activate
+      MsgBox "Run schedule required for Recurring Entry"
+      Set FuncExports = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+    Set FieldObj = FuncExports("DBAKZ")
+    FieldObj.Value = ActiveSheet.Range("G19").Value
+
+  Else
+    '   Document date
+    Set FieldObj = FuncExports("BLDAT")
+    SapDate = ConvertDateToSap(ActiveSheet.Range("D6").Value)
+    FieldObj.Value = SapDate
+    If IsEmpty(ActiveSheet.Range("D8").Value) <> True Then
+      '   Posting date (not required)
+      Set FieldObj = FuncExports("BUDAT")
+      SapDate = ConvertDateToSap(ActiveSheet.Range("D8").Value)
+      FieldObj.Value = SapDate
+    End If
+  End If
+  '   Reference document
+  Set FieldObj = FuncExports("XBLNR")
+  FieldObj.Value = ActiveSheet.Range("D10").Value
+  '   Header text
+  Set FieldObj = FuncExports("BKTXT")
+  FieldObj.Value = ActiveSheet.Range("D12").Value
+  
+  '   Currency
+  Set FieldObj = FuncExports("WAERS")
+  FieldObj.Value = ActiveSheet.Range("D20").Value
+  
+  '   Currency Rate {JE Upload Changes 3/25/06}
+  TempKursf = ActiveSheet.Range("E20").Value
+  TempKursf = TempKursf * 100000
+  Set FieldObj = FuncExports("KURSF")
+  FieldObj.Value = ActiveSheet.Range("E20").Value
+  
+  ' Set line item entries {JE Upload Changes 3/25/06}
+  Set EntriesTable = PostJournal.Tables("ENTRIES")
+  
+' The following code triggers a batcherr session if A1 = SM35
+  If ActiveSheet.Range("D6").Value = "SM35" Then
+    Set FieldObj = FuncExports("BATCHERR")
+    FieldObj.Value = "X"
+  End If
+  
+  ' Loop through UsedRegion
+  Set EntriesRange = ActiveSheet.UsedRange
+  KeyRowFound = False
+  For Each thisRow In EntriesRange.Rows
+    If thisRow.Row > 23 Then
+      '  Skip row if amount is blank or 0
+      If IsEmpty(thisRow.Cells(1, 3)) = False And _
+         IsNull(thisRow.Cells(1, 3)) = False And _
+         thisRow.Cells(1, 3).Value <> "" And _
+         thisRow.Cells(1, 3).Value <> " " Then
+        If Application.WorksheetFunction.IsNumber(thisRow.Cells(1, 3).Value) = False Then
+          thisRow.Cells(1, 3).Activate
+          MsgBox "Invalid amount"
+          Set FuncExports = Nothing
+          Application.Cursor = xlDefault
+          Exit Sub
+        End If
+        If thisRow.Cells(1, 3).Value <> 0 Then
+        
+          ' Check if valid quantity entered
+          If IsEmpty(thisRow.Cells(1, 11)) = False And _
+             IsNull(thisRow.Cells(1, 11)) = False And _
+             thisRow.Cells(1, 11).Value <> "" And _
+             thisRow.Cells(1, 11).Value <> " " Then
+            If Application.WorksheetFunction.IsNumber(thisRow.Cells(1, 11).Value) = False Then
+              thisRow.Cells(1, 11).Activate
+              MsgBox "Invalid quantity"
+              Set FuncExports = Nothing
+              Application.Cursor = xlDefault
+              Exit Sub
+            End If
+          End If
+        
+
+          Set EntryRow = EntriesTable.Rows.Add
+          KeyRowFound = True
+          
+         ' Reformat this as ## to make 1 into 01 RFSM 8883
+          Select Case thisRow.Cells(1, 1).Value
+            Case 1
+                thisRow.Cells(1, 1).Value = "01"
+            Case 7
+                thisRow.Cells(1, 1).Value = "07"
+          End Select
+          EntryRow.Value("BSCHL") = thisRow.Cells(1, 1).Value
+          
+          EntryRow.Value("KONTO") = thisRow.Cells(1, 2).Value
+          EntryRow.Value("WRBTR") = thisRow.Cells(1, 3).Value
+          EntryRow.Value("GSBER") = thisRow.Cells(1, 4).Value
+          EntryRow.Value("KOSTL") = thisRow.Cells(1, 5).Value
+          EntryRow.Value("AUFNR") = thisRow.Cells(1, 6).Value
+          EntryRow.Value("BUKRS") = thisRow.Cells(1, 7).Value
+          BUKRS = thisRow.Cells(1, 7).Value
+          EntryRow.Value("ZUONR") = thisRow.Cells(1, 8).Value
+          EntryRow.Value("SGTXT") = thisRow.Cells(1, 9).Value
+          EntryRow.Value("MATNR") = thisRow.Cells(1, 10).Value
+          EntryRow.Value("MENGE") = thisRow.Cells(1, 11).Value
+          EntryRow.Value("MEINS") = thisRow.Cells(1, 12).Value
+          ' {JE Upload Changes 3/25/06}
+          EntryRow.Value("PROJK") = thisRow.Cells(1, 13).Value
+          '[ {JE Upload Changes 1/28/07 Profit Center Fields}
+          EntryRow.Value("PRCTR") = thisRow.Cells(1, 14).Value
+          'EntryRow.Value("KNDNR") = thisRow.Cells(1, 14).Value
+          EntryRow.Value("HIE01") = thisRow.Cells(1, 15).Value
+          EntryRow.Value("WWBRD") = thisRow.Cells(1, 16).Value
+          EntryRow.Value("WWCAT") = thisRow.Cells(1, 17).Value
+          EntryRow.Value("WWSCT") = thisRow.Cells(1, 18).Value
+          EntryRow.Value("WWTEM") = thisRow.Cells(1, 19).Value
+          '] {JE Upload Changes 1/28/07 Profit Center Fields}
+          '[ {JE Upload Changes 11/15/07 Sub-Team}
+          EntryRow.Value("WWSTM") = thisRow.Cells(1, 20).Value
+          '] {JE Upload Changes 1/28/07 Profit Center Fields}
+        End If
+      End If
+    End If
+  Next
+  
+  If PostJournal.Call = True Then
+    If PostJournal.Imports("RCODE").Value = 0 Then
+      ActiveSheet.Range("I1").Value = PostJournal.Imports("BELNR").Value
+      ActiveSheet.Range("J1").Value = PostJournal.Imports("GJAHR").Value
+      ActiveSheet.Range("I20").Value = PostJournal.Imports("NAME").Value & " " & PostJournal.Imports("CPUDT").Value
+      ActiveSheet.Range("K1").Value = PostJournal.Imports("SYSTEM").Value
+      ActiveSheet.Range("H21").Value = AutoJEVersion
+      
+' Add a comment here to display on the worksheet.
+    Range("H21").AddComment
+    Range("H21").Comment.Visible = False
+    Range("H21").Comment.Text Text:= _
+        "Version of the C:\AutoJE\Post to SAP.XLA file. May be used for troubleshooting. Do Not Change."
+      
+' See if any cross company documents
+      Set CrossCCDocs = PostJournal.Tables("CCDOCS")
+      currRow = 4
+      For Each thisRow In CrossCCDocs.Rows
+        ActiveSheet.Cells(currRow, 8).Value = thisRow.Value("BUKRS")
+        BUKRS = thisRow.Value("BUKRS")
+        ActiveSheet.Cells(currRow, 9).Value = thisRow.Value("BELNR")
+        Belnr = thisRow.Value("BELNR")
+        ActiveSheet.Cells(currRow, 10).Value = thisRow.Value("GJAHR")
+        GJAHR = thisRow.Value("GJAHR")
+        currRow = currRow + 1
+      Next
+      
+' If no cross company set single company info
+      If currRow = 4 Then
+        ActiveSheet.Cells(currRow, 8).Value = ActiveSheet.Range("D18").Value
+        BUKRS = ActiveSheet.Cells(currRow, 8).Value
+        ActiveSheet.Cells(currRow, 9).Value = ActiveSheet.Range("I1").Value
+        Belnr = ActiveSheet.Cells(currRow, 9).Value
+        ActiveSheet.Cells(currRow, 10).Value = PostJournal.Imports("GJAHR").Value
+        GJAHR = ActiveSheet.Cells(currRow, 10).Value
+        currRow = currRow + 1
+      End If
+    End If
+    
+' ******************* Start code to save spreadsheet to Sharepoint ****************
+' Save the spreadsheet to the Sharepoint location in the naming format
+         ActiveWorkbook.SaveCopyAs PostJournal.Imports("FILENAME").Value
+         
+If My.Computer.FileSystem.FileExists(PostJournal.Imports("FILENAME").Value) Then
+    MsgBox ("Spreadsheet saved to COMMONSTORE.")
+Else
+    MsgBox ("Spreadsheet not saved to COMMONSTORE. Save manually.")
+End If
+                  
+' Display the sharepoint directory in the cell I21 as a hyperlink
+    Range("I21").Select
+    ActiveSheet.Hyperlinks.Add Anchor:=Selection, Address:= _
+        PostJournal.Imports("SHAREPOINT").Value, TextToDisplay:= _
+        PostJournal.Imports("SHAREPOINT").Value
+    With Selection.Font
+        .Name = "tahoma"
+        .Size = 12
+        .Strikethrough = False
+        .Superscript = False
+        .Subscript = False
+        .OutlineFont = False
+        .Shadow = False
+        .Underline = xlUnderlineStyleNone
+        .ColorIndex = 5
+    End With
+    
+    Range("I21").AddComment
+    Range("I21").Comment.Visible = False
+    Range("I21").Comment.Text Text:= _
+        "Save additional supporting documents in this directory. Click link to open an Explorer window."
+    
+    Range("I22").Select
+    Selection.NumberFormat = "@"
+    ActiveSheet.Range("I22").Value = BUKRS & Belnr & GJAHR
+    
+    With Selection.Font
+        .Name = "tahoma"
+        .Size = 12
+        .Strikethrough = False
+        .Superscript = False
+        .Bold = False
+        .OutlineFont = False
+        .Shadow = False
+        .Underline = none
+    End With
+    
+    Range("I22").AddComment
+    Range("I22").Comment.Visible = False
+    Range("I22").Comment.Text Text:= _
+        "Save documents using this key. Supported file types are DOC, FAX, HTM, HTML, JPG, PDF, TIF, TXT, XLS"
+    
+' End Select
+' ******************** End code to save spreadsheet to Sharepoint *****************
+    
+    Application.Cursor = xlDefault
+    Set MsgTexts = PostJournal.Tables("MSGTXTS")
+    For Each thisRow In MsgTexts.Rows
+      MsgBox thisRow.Value("MSGTEXT")
+    Next
+    
+  Else
+    Application.Cursor = xlDefault
+    MsgBox "Unable to post to SAP"
+  End If
+
+  Application.Cursor = xlDefault
+
+Exit Sub
+EH:
+
+  MsgBox Err.Number & " " & Err.Description
+  Application.Cursor = xlDefault
+
+End Sub
+
+
+Public Sub CreateSAPCheckRequest2()
+  
+  Dim Response, venResponse
+  Dim zeroString, vLen, Msg, Val, MyPos
+  Dim Amount, Amount2 As Currency
+  Dim venNum, cityStateZip, Belnr, MsgStr, NoStr, PostDate As String
+      
+  Call ClearExcessRowsAndColumns
+      
+' Send Option Must be Specified: 1 or 2 or 3. Only one choice.
+    Response = ActiveSheet.Range("B19").Value & _
+               ActiveSheet.Range("B21").Value & _
+               ActiveSheet.Range("B23").Value
+
+    If Response <> "X" Then
+          MsgBox "Choose One Check Delivery Option."
+            ActiveSheet.Range("B19").Value = ""
+            ActiveSheet.Range("B21").Value = ""
+            ActiveSheet.Range("B23").Value = ""
+      Exit Sub
+    End If
+
+  ' Use Data Validation.
+  'If ActiveSheet.OptionButton1.Value = True Then
+  '   ElseIf ActiveSheet.OptionButton2.Value = True Then
+  '   ElseIf ActiveSheet.OptionButton3.Value = True Then
+  '      Response = MsgBox("Is this an Immediate Needs check?", vbYesNo)
+  '      If Response = 7 Then
+  '         ActiveSheet.Range("B23").Value = ""
+  '         MsgBox "Choose Payee or Attachment", _
+  '         vbOKOnly, "Re-select Check Option..."
+  '        Exit Sub
+  '     End If
+  'End If
+  
+' As per Patti Stoll, 10/8/2006, require only Name and Location
+' If Return to is selected, require all 4 entries for Name, Location, Department and Phone
+    If ActiveSheet.CheckBox1.Value = True Then
+     If ActiveSheet.Range("D27").Value = "" Or ActiveSheet.Range("D27").Value = " " Then
+           MsgBox "Fill in Name", _
+                  vbOKOnly, "Return to data is missing..."
+        Exit Sub
+     End If
+     If ActiveSheet.Range("D28").Value = "" Or ActiveSheet.Range("D28").Value = " " Then
+          MsgBox "Fill in Location", _
+                vbOKOnly, "Return to data is missing..."
+        Exit Sub
+     End If
+     'If ActiveSheet.Range("D29").Value = "" Or ActiveSheet.Range("D29").Value = " " Then
+     '     MsgBox "Fill in Department", _
+     '           vbOKOnly, "Return to data is missing..."
+     '   Exit Sub
+     'End If
+     'If ActiveSheet.Range("D30").Value = "" Or ActiveSheet.Range("D30").Value = " " Then
+     '     MsgBox "Fill in Phone", _
+     '           vbOKOnly, "Return to data is missing..."
+     '   Exit Sub
+     'End If
+    End If
+      
+  ' Check to see if document already posted
+  If IsEmpty(ActiveSheet.Range("J1").Value) <> True Then
+    MsgBox "Check request already processed"
+    Exit Sub
+  End If
+  
+  ' Check to see if valid invoice amount entered
+  Val = ActiveSheet.Range("E16").Value
+  If Application.WorksheetFunction.IsNumber(Val) = False Then
+    ActiveSheet.Range("E16").Activate
+    MsgBox "Please enter a valid invoice amount"
+    Exit Sub
+  End If
+  
+  ' Check to see if transaction is balanced
+  Val = ActiveSheet.Range("E7").Value
+  If Application.WorksheetFunction.IsNumber(Val) = False Then
+    MsgBox "Transaction does not balance"
+    Exit Sub
+  End If
+  
+  Amount = ActiveSheet.Range("E7").Value
+  Amount2 = ActiveSheet.Range("G7").Value
+  If Amount <> Amount2 Then
+    MsgBox "Transaction does not balance"
+    Exit Sub
+  End If
+  
+  ' Check to see if invoice number entered
+  If IsEmpty(ActiveSheet.Range("E12").Value) = True Or _
+     ActiveSheet.Range("E12").Value = " " Then
+    ActiveSheet.Range("E12").Activate
+    MsgBox "Please enter invoice number"
+    Exit Sub
+  End If
+
+  ' Check to see if vendor number entered
+  If IsEmpty(ActiveSheet.Range("E10").Value) = True Or _
+     ActiveSheet.Range("E10").Value = " " Then
+    ActiveSheet.Range("E10").Activate
+    MsgBox "Please enter vendor number"
+    Exit Sub
+  End If
+  
+  ' Check to see if document type entered
+  If IsEmpty(ActiveSheet.Range("E13").Value) = True Or _
+     ActiveSheet.Range("E13").Value = " " Then
+    ActiveSheet.Range("E13").Activate
+    MsgBox "Please enter document type"
+    Exit Sub
+  End If
+  
+  ' Check to see if company code entered
+  If IsEmpty(ActiveSheet.Range("E14").Value) = True Or _
+     ActiveSheet.Range("E14").Value = " " Then
+    ActiveSheet.Range("E14").Activate
+    MsgBox "Please enter company code"
+    Exit Sub
+  End If
+  
+  ' Check to see if business area entered
+  If IsEmpty(ActiveSheet.Range("F14").Value) = True Or _
+     ActiveSheet.Range("F14").Value = " " Then
+    ActiveSheet.Range("F14").Activate
+    MsgBox "Please enter business area"
+    Exit Sub
+  End If
+  
+  ' Check to see if vendor posting key entered
+  If IsEmpty(ActiveSheet.Range("E15").Value) = True Or _
+     ActiveSheet.Range("E15").Value = " " Then
+    ActiveSheet.Range("E15").Activate
+    MsgBox "Please enter posting key"
+    Exit Sub
+  End If
+  
+  ' Check to see if invoice amount entered
+  If IsEmpty(ActiveSheet.Range("E16").Value) = True Or _
+     ActiveSheet.Range("E16").Value = " " Then
+     ActiveSheet.Range("E16").Activate
+    MsgBox "Please enter an invoice amount"
+    Exit Sub
+  End If
+  
+  ' Check to see if invoice date entered
+  If IsEmpty(ActiveSheet.Range("E11").Value) = True Or _
+     ActiveSheet.Range("E11").Value = " " Then
+    ActiveSheet.Range("E11").Activate
+    MsgBox "Please enter an invoice date"
+    Exit Sub
+  End If
+  
+  ' Check to see if valid invoice date entered
+  If IsDate(ActiveSheet.Range("E11").Value) = False Then
+    ActiveSheet.Range("E11").Activate
+    MsgBox "Please enter a valid invoice date"
+    Exit Sub
+  End If
+  
+  ' Check to see if business area entered
+  If IsEmpty(ActiveSheet.Range("C34").Value) = True Or _
+     ActiveSheet.Range("F14").Value = " " Then
+    ActiveSheet.Range("F14").Activate
+    MsgBox "Please enter a business area"
+    Exit Sub
+  End If
+  
+  If LogonToSap = 0 Then
+    Application.Cursor = xlDefault
+    Exit Sub
+  End If
+  
+  ' Get vendor information
+  On Error GoTo EH
+  venNum = ActiveSheet.Range("E10").Value
+  vLen = Len(venNum)
+  vLen = 10 - vLen
+  zeroString = String(vLen, "0")
+  venNum = zeroString & venNum
+  Set sapVendor = oBAPI.GetSAPObject("EGR_Vendor", venNum)
+  If sapVendor Is Nothing Then
+    MsgBox "Unable to get vendor information"
+    Application.Cursor = xlDefault
+    Exit Sub
+  End If
+  
+  ' See if vendor is set up as a one-time vendor account
+  If sapVendor.OneTimeAccount = "X" Then
+    Msg = "Vendor is a One-time vendor account," & Chr(13) & "the address on the spreadsheet will be used." & Chr(13) & "Continue?"
+    venResponse = MsgBox(Msg, vbYesNo, "SAP One-Time Vendor")
+    If venResponse = vbNo Then
+      Set sapVendor = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+  Else
+    Msg = sapVendor.Name & Chr(13) & sapVendor.Street & Chr(13) & sapVendor.City & ", " & sapVendor.Region & " " & sapVendor.PostalCode
+    Msg = Msg & Chr(13) & " " & Chr(13) & "Continue?"
+    venResponse = MsgBox(Msg, vbYesNo, "SAP Vendor Address")
+    If venResponse = vbNo Then
+      Set sapVendor = Nothing
+      Application.Cursor = xlDefault
+      Exit Sub
+    End If
+  End If
+  
+  ' Get document date
+  DocuDate = ConvertDateToSap(ActiveSheet.Range("E11").Value)
+  
+  ' Check if document may be a duplicate
+  Set CheckDocument = Functions.Add("Z_CHECK_FOR_DOCUMENT")
+  Set FuncExports = CheckDocument.Exports
+  '   Company code
+  Set FieldObj = FuncExports("BUKRS")
+  FieldObj.Value = ActiveSheet.Range("E14").Value
+  '   Vendor
+  Set FieldObj = FuncExports("LIFNR")
+  FieldObj.Value = ActiveSheet.Range("E10").Value
+  '   Currency
+  Set FieldObj = FuncExports("WAERS")
+  FieldObj.Value = "USD"
+  '   Document Date
+  Set FieldObj = FuncExports("BLDAT")
+  FieldObj.Value = DocuDate
+  '   Reference document
+  Set FieldObj = FuncExports("XBLNR")
+  FieldObj.Value = ActiveSheet.Range("E12").Value
+  '   Amount
+  Set FieldObj = FuncExports("WRBTR")
+  FieldObj.Value = ActiveSheet.Range("E16").Value
+  
+  If CheckDocument.Call = True Then
+    If CheckDocument.Imports("RCODE").Value = 1 Then
+      Belnr = CheckDocument.Imports("BELNR").Value
+      Msg = "Invoice may already have been entered as document " & Belnr & Chr(13) & "Continue?"
+      venResponse = MsgBox(Msg, vbYesNo, "Possible Duplicate Posting")
+      If venResponse = vbNo Then
+        Set sapVendor = Nothing
+        Set FuncExports = Nothing
+        Application.Cursor = xlDefault
+        Exit Sub
+      End If
+    End If
+  End If
+  
+  Set FuncExports = Nothing
+  
+  Set PostCheckRequest = Functions.Add("Z_POST_CHECK_REQUEST_COPA2")
+  ' Put export objects in local object
+  Set FuncExports = PostCheckRequest.Exports
+  
+  ' Set export parameters
+  '   Company code
+  Set FieldObj = FuncExports("BUKRS")
+  FieldObj.Value = ActiveSheet.Range("E14").Value
+  '   Document type
+  Set FieldObj = FuncExports("BLART")
+  FieldObj.Value = ActiveSheet.Range("E13").Value
+  '   Document date
+  Set FieldObj = FuncExports("BLDAT")
+  FieldObj.Value = DocuDate
+
+  '   Posting date = current date
+  Set FieldObj = FuncExports("BUDAT")
+  If IsEmpty(ActiveSheet.Range("J29").Value) = True Or _
+     ActiveSheet.Range("J29").Value = " " Then
+    PostDate = Date
+    SapDate = ConvertDateToSap(Date)
+  Else
+    PostDate = ActiveSheet.Range("J29").Value
+    SapDate = ConvertDateToSap(ActiveSheet.Range("J29").Value)
+  End If
+
+  '   Reference document
+  Set FieldObj = FuncExports("XBLNR")
+  FieldObj.Value = ActiveSheet.Range("E12").Value
+  
+  '   Header text
+  Set FieldObj = FuncExports("BKTXT")
+  FieldObj.Value = ActiveSheet.Range("H10").Value
+   
+   '   Change Payment Method to read dropdown.
+   '   Payment method
+    Set FieldObj = FuncExports("ZLSCH")
+    If ActiveSheet.Range("E14").Value = "5110" Then
+        If ActiveSheet.Range("F14").Value <> "4367" And ActiveSheet.Range("F14").Value <> "4369" And ActiveSheet.Range("F14").Value <> "4570" Then
+            If ActiveSheet.Range("B19").Value = "X" Then
+                FieldObj.Value = " "
+            ElseIf ActiveSheet.Range("B21").Value = "X" Then
+                FieldObj.Value = "4"
+            ElseIf ActiveSheet.Range("B23").Value = "X" Then
+                FieldObj.Value = "5"
+            End If
+        Else
+            If ActiveSheet.Range("B19").Value = "X" Then
+                FieldObj.Value = " "
+            ElseIf ActiveSheet.Range("B21").Value = "X" Then
+                FieldObj.Value = "G"
+            ElseIf ActiveSheet.Range("B23").Value = "X" Then
+                FieldObj.Value = "I"
+            End If
+        End If
+    Else
+        If ActiveSheet.Range("B19").Value = "X" Then
+            FieldObj.Value = " "
+        ElseIf ActiveSheet.Range("B21").Value = "X" Then
+            FieldObj.Value = "G"
+        ElseIf ActiveSheet.Range("B23").Value = "X" Then
+            FieldObj.Value = "I"
+        End If
+    End If
+    
+   ' For future use of foreign currencies, remove comments
+   ' Replace E12 and E20 with actual cell used.
+   ' Set FieldObj = FuncExports("WAERS")
+   ' FieldObj.Value = ActiveSheet.Range("E12").Value
+   ' Set FieldObj = FuncExports("KURSF")
+   ' TempKursf = ActiveSheet.Range("E20").Value
+   ' TempKursf = TempKursf * 100000
+   ' FieldObj.Value = ActiveSheet.Range("E20").Value
+  
+  ' If one time vendor account, get address info
+  If sapVendor.OneTimeAccount = "X" Then
+    ' Name
+    Set FieldObj = FuncExports("NAME1")
+    FieldObj.Value = ActiveSheet.Range("H10").Value
+    ' Street Address
+    Set FieldObj = FuncExports("STRAS")
+    FieldObj.Value = ActiveSheet.Range("H11").Value
+    ' City
+    Set FieldObj = FuncExports("ORT01")
+    FieldObj.Value = ActiveSheet.Range("H13").Value
+    ' State
+    Set FieldObj = FuncExports("REGIO")
+    FieldObj.Value = ActiveSheet.Range("H14").Value
+    ' Zip code
+    Set FieldObj = FuncExports("PSTLZ")
+    FieldObj.Value = ActiveSheet.Range("H15").Value
+  End If
+  
+  ' Set line item entries
+  Set EntriesTable = PostCheckRequest.Tables("ENTRIES")
+  
+  ' Set up first line item
+  Set EntryRow = EntriesTable.Rows.Add
+  EntryRow.Value("BSCHL") = ActiveSheet.Range("E15").Value
+  EntryRow.Value("KONTO") = ActiveSheet.Range("E10").Value
+  ' Make sure amount is rounded to two decimal places
+  Amount = CCur((Fix((ActiveSheet.Range("E16").Value * 100) + 0.5)) / 100)
+  EntryRow.Value("WRBTR") = Amount
+  EntryRow.Value("GSBER") = ActiveSheet.Range("F14").Value
+  EntryRow.Value("SGTXT") = ActiveSheet.Range("H17").Value
+    
+  ' Loop through UsedRegion
+  Set EntriesRange = ActiveSheet.UsedRange
+  For Each thisRow In EntriesRange.Rows
+    If thisRow.Row > 33 Then
+      '  Skip row if amount is blank or 0
+      If IsEmpty(thisRow.Cells(1, 6)) = False And _
+         IsNull(thisRow.Cells(1, 6)) = False And _
+         thisRow.Cells(1, 6).Value <> " " Then
+        If Application.WorksheetFunction.IsNumber(thisRow.Cells(1, 6).Value) = False Then
+          thisRow.Cells(1, 6).Activate
+          MsgBox "Invalid amount"
+          Set sapVendor = Nothing
+          Set FuncExports = Nothing
+          Application.Cursor = xlDefault
+          Exit Sub
+        End If
+        ' Make sure amount is rounded to two decimal places
+        Amount = thisRow.Cells(1, 6).Value
+        Amount = Int(Amount * 100 + 0.5) / 100
+        
+        If Amount <> 0 Then
+          If IsEmpty(thisRow.Cells(1, 1)) = True Or _
+             thisRow.Cells(1, 1).Value = " " Then
+            thisRow.Cells(1, 1).Activate
+            MsgBox "Please enter a posting key"
+            Set sapVendor = Nothing
+            Set FuncExports = Nothing
+            Application.Cursor = xlDefault
+            Exit Sub
+          End If
+          If IsEmpty(thisRow.Cells(1, 3)) = True Or _
+            thisRow.Cells(1, 3).Value = " " Then
+            thisRow.Cells(1, 3).Activate
+            MsgBox "Please enter a business area"
+            Set sapVendor = Nothing
+            Set FuncExports = Nothing
+            Application.Cursor = xlDefault
+            Exit Sub
+          End If
+
+          If thisRow.Cells(1, 1).Value = "21" Or thisRow.Cells(1, 1).Value = "31" Then
+            If thisRow.Cells(1, 4).Value <> ActiveSheet.Range("E10").Value Then
+              On Error GoTo EH
+              Set sapVendor = Nothing
+              venNum = thisRow.Cells(1, 4).Value
+              vLen = Len(venNum)
+              vLen = 10 - vLen
+              zeroString = String(vLen, "0")
+              venNum = zeroString & venNum
+              Set sapVendor = oBAPI.GetSAPObject("EGR_Vendor", venNum)
+              If sapVendor Is Nothing Then
+                thisRow.Cells(1, 4).Activate
+                MsgBox "Unable to get vendor information"
+                Set FuncExports = Nothing
+                Application.Cursor = xlDefault
+                Exit Sub
+              End If
+              thisRow.Cells(1, 4).Activate
+              Msg = sapVendor.Name & Chr(13) & sapVendor.Street & Chr(13) & sapVendor.City & ", " & sapVendor.Region & " " & sapVendor.PostalCode
+              Msg = Msg & Chr(13) & " " & Chr(13) & "Continue?"
+              venResponse = MsgBox(Msg, vbYesNo, "SAP Vendor Address")
+              If venResponse = vbNo Then
+                Set sapVendor = Nothing
+                Set FuncExports = Nothing
+                Application.Cursor = xlDefault
+                Exit Sub
+              End If
+            End If
+            If IsEmpty(thisRow.Cells(1, 8).Value) = True Or _
+               thisRow.Cells(1, 8).Value = " " Then
+              thisRow.Cells(1, 8).Activate
+              MsgBox "Please enter item text"
+              Set sapVendor = Nothing
+              Set FuncExports = Nothing
+              Application.Cursor = xlDefault
+              Exit Sub
+            End If
+          End If
+          Set EntryRow = EntriesTable.Rows.Add
+          EntryRow.Value("BSCHL") = thisRow.Cells(1, 1).Value
+          EntryRow.Value("BUKRS") = thisRow.Cells(1, 2).Value
+          BUKRS = thisRow.Cells(1, 2).Value
+          EntryRow.Value("GSBER") = thisRow.Cells(1, 3).Value
+          EntryRow.Value("KOSTL") = thisRow.Cells(1, 5).Value
+          EntryRow.Value("KONTO") = thisRow.Cells(1, 4).Value
+          EntryRow.Value("WRBTR") = Amount
+          EntryRow.Value("ZUONR") = thisRow.Cells(1, 7).Value
+          EntryRow.Value("SGTXT") = thisRow.Cells(1, 8).Value
+          EntryRow.Value("AUFNR") = thisRow.Cells(1, 9).Value
+          EntryRow.Value("PROJK") = thisRow.Cells(1, 10).Value
+          
+          '[ {JE Upload Changes 1/28/07 Profit Center Fields}
+          EntryRow.Value("PRCTR") = thisRow.Cells(1, 11).Value
+          EntryRow.Value("HIE01") = thisRow.Cells(1, 12).Value
+          EntryRow.Value("WWBRD") = thisRow.Cells(1, 13).Value
+          EntryRow.Value("WWCAT") = thisRow.Cells(1, 14).Value
+          EntryRow.Value("WWSCT") = thisRow.Cells(1, 15).Value
+          EntryRow.Value("WWTEM") = thisRow.Cells(1, 16).Value
+          EntryRow.Value("WWSTM") = thisRow.Cells(1, 17).Value
+          '] {JE Upload Changes 1/28/07 Profit Center Fields}
+          
+        End If
+      End If
+    End If
+  Next
+  
+  If PostCheckRequest.Call = True Then
+    If PostCheckRequest.Imports("RCODE").Value = 0 Then
+      ActiveSheet.Range("J1").Value = PostCheckRequest.Imports("BELNR").Value
+      ' ActiveSheet.Range("K1").Value = PostCheckRequest.Imports("GJAHR").Value
+      ActiveSheet.Range("H30").Value = PostCheckRequest.Imports("NAME").Value
+      ActiveSheet.Range("H31").Value = PostDate
+      
+      If ActiveSheet.ProtectContents = False Then
+        ActiveSheet.Range("H31").HorizontalAlignment = xlLeft
+      End If
+             
+' See if any cross company documents
+       Set CrossCCDocs = PostCheckRequest.Tables("CCDOCS")
+       currRow = 2
+      For Each thisRow In CrossCCDocs.Rows
+        ActiveSheet.Cells(currRow, 9).Value = thisRow.Value("BUKRS")
+        ActiveSheet.Cells(currRow, 10).Value = thisRow.Value("BELNR")
+        ' ActiveSheet.Cells(currRow, 11).Value = thisRow.Value("GJAHR")
+        currRow = currRow + 1
+        If currRow > 17 Then
+          currRow = 17
+        End If
+      Next
+    
+      While currRow < 6
+        ActiveSheet.Cells(currRow, 9).Value = ""
+        ActiveSheet.Cells(currRow, 10).Value = ""
+        currRow = currRow + 1
+      Wend
+    
+    End If
+    
+    Application.Cursor = xlDefault
+    Set MsgTexts = PostCheckRequest.Tables("MSGTXTS")
+    ' NoStr = "No batch input data"
+    TempInt = 0
+    For Each thisRow In MsgTexts.Rows
+      MsgStr = thisRow.Value("MSGTEXT")
+         MsgBox MsgStr
+         
+      If TempInt = 0 Then
+        TempInt = InStr(1, thisRow.Value("MSGTEXT"), _
+                "was posted in company code", vbTextCompare)
+      End If
+
+    Next
+    
+    If TempInt = 0 Then
+         MsgStr = "Unable to post to SAP"
+         MsgBox MsgStr
+    End If
+    
+' ******************* Start code to save spreadsheet to Sharepoint ****************
+' Display the sharepoint directory in the cell I19 as a hyperlink
+    Range("I19").Select
+    ActiveSheet.Hyperlinks.Add Anchor:=Selection, Address:= _
+        PostCheckRequest.Imports("SHAREPOINT").Value, TextToDisplay:= _
+        PostCheckRequest.Imports("SHAREPOINT").Value
+    With Selection.Font
+        .Name = "tahoma"
+        .Size = 12
+        .Strikethrough = False
+        .Superscript = False
+        .Subscript = False
+        .OutlineFont = False
+        .Shadow = False
+        .Underline = xlUnderlineStyleNone
+        .ColorIndex = 5
+    End With
+    
+    Range("I19").AddComment
+    Range("I19").Comment.Visible = False
+    Range("I19").Comment.Text Text:= _
+        "Save additional supporting documents in this directory. Click link to open an Explorer window."
+    
+    Range("I20").Select
+    Selection.NumberFormat = "@"
+    ActiveSheet.Range("I20").Value = BUKRS & Belnr & GJAHR
+    
+    With Selection.Font
+        .Name = "tahoma"
+        .Size = 12
+        .Strikethrough = False
+        .Superscript = False
+        .Bold = False
+        .OutlineFont = False
+        .Shadow = False
+        .Underline = none
+    End With
+    
+    Range("I20").AddComment
+    Range("I20").Comment.Visible = False
+    Range("I20").Comment.Text Text:= _
+        "Save documents using this key. Supported file types are DOC, FAX, HTM, HTML, JPG, PDF, TIF, TXT, XLS"
+
+' Save the spreadsheet to the Sharepoint location in the naming format
+         ActiveWorkbook.SaveCopyAs PostCheckRequest.Imports("FILENAME").Value
+         
+If My.Computer.FileSystem.FileExists(PostCheckRequest.Imports("FILENAME").Value) Then
+    MsgBox ("Spreadsheet saved to COMMONSTORE.")
+Else
+    MsgBox ("Spreadsheet not saved to COMMONSTORE. Save manually.")
+End If
+
+' ******************** End code to save spreadsheet to Sharepoint *****************
+  
+  
+  Else
+    Application.Cursor = xlDefault
+    MsgBox "Unable to post to SAP"
+  End If
+
+  Set sapVendor = Nothing
+  
+Exit Sub
+EH:
+
+  If Err.Number = "8800" Then
+    Msg = "Vendor " & venNum & " does not exist"
+    MsgBox Msg
+  Else
+    MsgBox Err.Number & " " & Err.Description
+  End If
+  Application.Cursor = xlDefault
+
+End Sub
