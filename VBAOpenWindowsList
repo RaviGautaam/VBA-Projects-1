@@ -1,0 +1,19 @@
+Sub VBAOpenWindowsList()
+    Dim strComputer As String
+    strComputer = "."
+
+    Set objWMIService = GetObject("winmgmts:\\" & strComputer & "\root\CIMV2")
+    Set colItems = objWMIService.ExecQuery("SELECT * FROM Win32_Process", , 48)
+
+    Dim row As Integer
+    row = 1
+    For Each objItem In colItems
+         ActiveSheet.Cells(row, 1).Value = objItem.ProcessId
+         ActiveSheet.Cells(row, 2).Value = objItem.Name
+         ActiveSheet.Cells(row, 3).Value = objItem.Caption
+         ActiveSheet.Cells(row, 4).Value = objItem.CommandLine
+         ActiveSheet.Cells(row, 5).Value = objItem.ExecutablePath
+        
+         row = row + 1
+    Next
+End Sub
