@@ -1,0 +1,1918 @@
+
+Function CashTypePA(Level)
+  ' Usage: Formula Field for PA Workbench Only
+  ' Returns different values based on the Level.
+  ' Based on the following assumptions
+  '  "AccEntClass"               is set to                "Name"
+  '  "TranType"    is set to                "Code"
+  '  "TranType(1)"  is set to             "Name"
+  '  "FundsSubType" is set to        "Name"  
+If Level=1 then
+if Grid.Field("TranType")="ACC" then 
+CashTypePA="Reported Cash Balance"
+end if
+if Grid.Field("AccEntClass")="Reported item" then
+CashTypePA="Reported Cash Balance"
+elseif Grid.Field("AccEntClass")="Projected item" then
+CashTypePA="Unreconciled Projected"
+elseif Grid.Field("AccEntClass")="Forecast item" then 
+CashTypePA="Unreconciled Forecasts"
+end if
+end if
+
+If Level=2 then
+if Grid.Field("TranType")="ACC" then 
+CashTypePA="1. Opening Balance"
+else
+CashTypePA=IT2CalcSelectValue(Grid.Field("Amount") >= 0, "3. Receipts", "2. Disbursements")
+end if
+
+if Grid.Field("AccEntClass")="Reported item" then
+CashTypePA=IT2CalcSelectValue(Grid.Field("Amount") >= 0, "3. Receipts", "2. Disbursements")
+end if
+
+if Grid.Field("AccEntType")="1 Day Float" then 
+CashTypePA="Opening Balance"
+end if
+
+end if
+
+If Level=3 then
+  if Grid.Field("TranType")="ACC" then 
+    CashTypePA="1. Prior Day Closing Available"
+  else
+    CashTypePA=Grid.Field("TranType(1)")
+  end if
+  
+  if Grid.Field("TranType")="CPF" then 
+    CashTypePA=Grid.Field("FundsSubType")
+  elseif Grid.Field("TranType")="FAD" then 
+    CashTypePA="Facility Fees"
+  elseif Grid.Field("AccEntClass")="Reported item" then 
+    CashTypePA=Grid.Field("UserRef")&" ("&Grid.Field("FundsSubType")&")"
+  end if
+  
+end if
+
+end function
+
+Function PositionTypePA(TradeType,AccountType,DaysToMaturity,Level)
+  ' Usage: Formula Field
+  ' Returns the asset class of a trade
+  '   1 Cash & Liquid Funds [ACC or Today]
+  '   2 Cash Equivalentss [<90 days]
+  '   3 Short Term  [<365 days]
+  '   4 Long Term  [all others]
+  if Level=1 then
+                If Instr(":Account:", ":" & TradeType & ":") <> 0 Then   
+                PositionTypePA = "1. Cash & Liquid Funds" 
+                ElseIf DaysToMaturity = 0 Then 
+                PositionTypePA = "1. Cash & Liquid Funds" 
+                ElseIf DaysToMaturity < 90 Then 
+                PositionTypePA = "2. Cash Equivalents (<90 Days)" 
+                ElseIf DaysToMaturity < 365 Then 
+                PositionTypePA = "3. Short Term (<1 Year)" 
+                Else 
+                PositionTypePA = "4. Long Term (>1 Year)" 
+                End If
+
+  ElseIf Level=2 then
+                If Instr(":Account:", ":" & TradeType & ":") <> 0 Then
+      If AccountType = "MF" then
+        PositionTypePA = "2. Money Market Funds"
+      else                  
+                PositionTypePA = "1. Cash At Bank" 
+      End If
+                Else 
+      PositionTypePA = TradeType 
+                End If
+
+  End If
+End Function
+
+Function IT2CalcNegateNumberIf(blnCondition, number)
+  ' Usage: Formula Field
+  ' Returns zero if blnCondition is true, number if false
+  If blnCondition Then IT2CalcNegateNumberIf = -number Else IT2CalcNegateNumberIf = number
+End Function  
+
+Function IT2CalcActivityAmount(numberAmt, blnOptLink, strActivityType, strPutCall)
+  ' Usage : Formula Field
+  ' Returns NULL for exercised/surrendered options
+  ' Returns negated amount where needed
+  if InStr(":Bought:Written:", ":" & strActivityType & ":") <> 0 then 
+  'Need to treat option link as a boolean (if non-zero then return NULL)
+  if blnOptLink then
+  numberAmt = NULL
+  End if
+  End if
+    
+ if InStr(":Sell:Repo:Put:Sell Forward:FoP Transfer From:", ":" & strActivityType & ":")<> 0 then  
+  IT2CalcActivityAmount = -numberAmt
+  elseif strActivityType = "Bought" and strPutCall = "Put" then  
+  IT2CalcActivityAmount = -numberAmt
+  elseif strActivityType = "Written" and strPutCall = "Call" then 
+  IT2CalcActivityAmount = -numberAmt
+  else IT2CalcActivityAmount = numberAmt 
+  End if
+End Function
+
+Function IT2CalcPositionOrigin(tranType)
+  ' Usage: Formula Field
+  ' Returns the origin of a position based on the transaction type as follows
+  '   Current Cash Balance [ACC]
+  '   Hedging Activities (FX) [FXF,FXS,FXA,FXW,FXT,FOB,FOW,FBB,FBW,FAB,FAW,SWC,COM]
+  '   Future Cash Flows [all others]
+  If Instr(":FXF:FXS:FXA:FXW:FXT:FOB:FOW:FBB:FBW:FAB:FAW:SWC:COM:", ":" & tranType & ":") <> 0 Then   
+    IT2CalcPositionOrigin = "Hedging Activities (FX)" 
+  ElseIf tranType = "ACC" Then 
+    IT2CalcPositionOrigin = "Current Cash Balance" 
+  Else 
+    IT2CalcPositionOrigin = "Future Cash Flows" 
+  End If
+End Function
+
+Function IT2CalcSelectValue(blnCondition, trueValue, falseValue)
+  ' Usage: Formula field
+  ' Returns trueValue If blnCondition is true, otherwise falseValue
+  '   Can be used to evaluate a simple true/false expression.
+  '   trueValue and falseValue can them selves be expressions, allowing quite complex logic
+  '   without having to resort to writing script code
+  If blnCondition Then IT2CalcSelectValue = trueValue Else IT2CalcSelectValue = falseValue
+End Function
+  
+Function IT2CalcWeekDayNumber(dtmDate)
+  ' Usage: Formula Field
+  ' Returns the day number in the week (1-7) for the date specified by dtmDate (1=Sunday)
+  ' Returns 0 if dtmDate is invalid
+  ' The result should be formatted with the Formatting Formula: 
+  '   IT2FmtWeekDayNumber(Grid.ThisField)
+  If dtmDate <> 0 then 
+    IT2CalcWeekDayNumber = Weekday(dtmDate)
+  Else  
+    IT2CalcWeekDayNumber = 0
+  End If  
+End Function
+
+Function IT2CalcYearAndMonthNumber(dtmDate)
+  ' Usage: Formula Field
+  ' Returns a number representing the current year and month number for sorting/grouping
+  ' Returns 0 if the date is invalid
+  ' The result should be formatted with the Formatting Formula: 
+  '   IT2FmtYearAndMonthNumber(Grid.ThisField)
+  Dim Month
+  Dim Year
+  If dtmDate <> 0 Then 
+    Month = DatePart("m",dtmDate)
+    Year = DatePart("yyyy",dtmDate)
+    IT2CalcYearAndMonthNumber = Year * 13+ Month
+  Else
+    IT2CalcYearAndMonthNumber = 0
+  End If
+End Function
+
+Function IT2CalcYearAndQuarter(dtmDate)
+  'Usage: Formula Field
+  'Returns  Year and quarter as e.g. 2004-Q3
+  Dim intMonthPart  'Month number, 1 - 12
+  Dim intYearPart   'Full year e.g. 1999      
+  Dim intQnum       'Quarter number, 1-4
+
+  intMonthPart = DatePart("m",dtmDate)
+  intYearPart = DatePart("yyyy",dtmDate)
+  intQnum = CInt((intMonthPart - 1)\3) + 1
+  IT2CalcYearAndQuarter = intYearPart & "-Q" & intQnum
+End Function
+
+Function IT2CalcYearAndWeekNumber(dtmDate)
+  ' Usage: Formula Field
+  ' Returns a number representing the current year and week number for sorting/grouping
+  ' Returns 0 if the date is invalid
+  ' The result should be formatted with the Formatting Formula: 
+  '   IT2FmtYearAndWeekNumber(Grid.ThisField)
+  Dim Week
+  Dim Year
+  If dtmDate <> 0 Then 
+    Week = DatePart("ww",dtmDate)
+    Year = DatePart("yyyy",dtmDate)
+    IT2CalcYearAndWeekNumber=Year*55 +Week
+  Else
+    IT2CalcYearAndWeekNumber=0
+  End If
+End Function
+
+Function IT2CalcYearMonthNumber(dtmDate)
+  ' Usage: Formula Field
+  ' Returns the month number of the year (1-12) for the date specified by dtmDate
+  ' Returns 0 if dtmDate is invalid
+  ' The result should be formatted with the Formatting Formula: 
+  '   IT2FmtYearMonthNumber(Grid.ThisField)
+  if dtmDate <> 0 then 
+    IT2CalcYearMonthNumber = DatePart("m",dtmDate)
+  Else  
+    IT2CalcYearMonthNumber =0
+  End If  
+ End Function
+
+Function IT2CalcYearWeekNumber(dtmDate)
+  ' Usage: Formula Field
+  ' Returns the week of the year (1-53) for the date specified by dtmDate
+  ' Returns 0 if dtmDate is invalid
+  ' The result should be formatted with the Formatting Formula: 
+  '   IT2FmtYearWeekNumber(Grid.ThisField)
+  if dtmDate <> 0 then 
+    IT2CalcYearWeekNumber = DatePart("ww",dtmDate)
+  Else  
+    IT2CalcYearWeekNumber =0
+  End If  
+ End Function
+
+Function IT2CalcZeroNumberIf(blnCondition, number)
+  ' Usage: Formula Field
+  ' Returns zero if blnCondition is true, number if false
+  If blnCondition Then IT2CalcZeroNumberIf = 0 Else IT2CalcZeroNumberIf = number
+End Function  
+
+Function IT2FmtFuturePastEvent(dtmDate, futureEventName, pastEventName, showFutureInDetail)
+  ' Usage: Formatting Formula
+  ' Gives detail about a future or past event. One side (determined by showFutureInDetail)
+  ' is shown in more detail than the other, which may not be shown at all if the relevant 
+  ' future/pastEventName is empty
+  Dim Today
+  Dim Days
+  Dim Years
+  Dim YearDays
+
+  If (dtmDate = 0) Then 
+    DateDisplay="n/a"
+  Else  
+    Today = Date()
+    If showFutureInDetail = True Then 
+      Days = cLng(dtmDate - Today)
+    Else  
+      Days = cLng(Today - dtmDate)
+    End If  
+    
+    Years = Days \ 365
+    YearDays = Days Mod 365
+    
+    If Days < 0 Then 
+      If showFutureInDetail = True Then
+        If pastEventName <> "" Then
+          IT2FmtFuturePastEvent = pastEventName &" " & (-1)*Days&" Days Ago"
+        Else
+          IT2FmtFuturePastEvent = "n/a"
+        End If
+      Else  
+        If futureEventName <> "" Then
+          IT2FmtFuturePastEvent = futureEventName &" in " &(-1)* Days &" Days"
+        Else
+          IT2FmtFuturePastEvent = "n/a"
+        End If  
+      End If  
+    ElseIf Days = 0 Then 
+      IT2FmtFuturePastEvent = "Today"
+    ElseIf Days = 1 Then  
+      If showFutureInDetail = True Then
+        IT2FmtFuturePastEvent = "Tomorrow"
+      Else 
+        IT2FmtFuturePastEvent = "Yesterday"
+      End If  
+    ElseIf Days > 1 And Days < 8 Then 
+      IT2FmtFuturePastEvent = WeekdayName(WeekDay(dtmDate))
+    Else   
+      If showFutureInDetail = True Then
+        If Days < 365 then
+          IT2FmtFuturePastEvent = futureEventName & " in " & Days & " Days"
+        ElseIf Days < 730 then
+          IT2FmtFuturePastEvent = futureEventName & " in 1 Year and " & YearDays & " Days"
+        Else 
+          IT2FmtFuturePastEvent = futureEventName & " in " & Years & " Years and "& YearDays & " Days"
+        End If  
+      Else
+        If Days < 365 then
+          IT2FmtFuturePastEvent = pastEventName & " " & Days & " Days Ago"
+        ElseIf Days < 730 then
+          IT2FmtFuturePastEvent = pastEventName & " 1 Year and "& YearDays & " Days Ago"
+        Else  
+          IT2FmtFuturePastEvent = pastEventName & " " & Years & " Years and " & YearDays & " Days ago"
+        End If  
+      End if
+    End If 
+  End If 
+End Function  
+
+Function IT2FmtWeekDayNumber(numDayInWeek)
+  ' Usage: Formatting Formula
+  ' Formatting function for IT2CalcWeekDayNumber
+  ' Formats a  day number (1-7) as e.g. "Sunday"
+  ' Returns "n/a" if dtmDate is zero
+  If numDayInWeek <> 0 Then 
+    IT2FmtWeekDayNumber = WeekdayName(numDayInWeek) 
+  Else 
+    IT2FmtWeekDayNumber="n/a"
+  End If  
+End Function
+
+Function IT2FmtYearAndMonthNumber(numMonthYear)
+  ' Usage: Formatting Formula
+  ' Formatting function for IT2CalcYearAndMonthNumber
+  ' Formats a month/year number as e.g. "April 2004"
+  ' Returns "n/a" if numMonthYear is zero
+  Dim Month
+  Dim Year
+  If numMonthYear <> 0 Then
+    Month = numMonthYear Mod 13
+    Year = numMonthYear \ 13
+    IT2FmtYearAndMonthNumber = IT2FmtYearMonthNumber(Month) & " " & Year
+  Else
+    IT2FmtYearAndMonthNumber = "n/a"
+  End If  
+End Function
+
+Function IT2FmtYearAndWeekNumber(numWeekYear)
+  ' Usage: Formatting Formula
+  ' Formatting function for IT2CalcYearAndWeekNumber
+  ' Formats a week/year number as e.g. "Week 17, 2004"
+  ' Returns "n/a" if numWeekYear is zero
+  Dim Week
+  Dim Year
+  If numWeekYear <> 0 Then
+    Week = numWeekYear Mod 55
+    Year = numWeekYear \55
+    IT2FmtYearAndWeekNumber= "Week " &Week& ", " &Year
+  Else
+    IT2FmtYearAndWeekNumber = "n/a"
+  End If  
+End Function
+
+Function IT2FmtYearMonthNumber(numMonthInYear)
+  ' Usage: Formatting Formula
+  ' Formatting function for IT2CalcYearMonthNumber
+  ' Formats a month number (1-53) as a month name e.g. "January"
+  ' Returns "n/a" if numMonthInYear is zero
+  If numMonthInYear <> 0 Then 
+    IT2FmtYearMonthNumber = MonthName(numMonthInYear)
+  Else
+    IT2FmtYearMonthNumber="n/a"
+  End If  
+ End Function
+
+Function IT2FmtYearWeekNumber(numWeekInYear)
+  ' Usage: Formatting Formula
+  ' Formatting function for IT2CalcYearWeekNumber
+  ' Formats a week number (1-53) as e.g. "Week 17"
+  ' Returns "n/a" if numWeekInYear is zero
+  If numWeekInYear <> 0 Then 
+    IT2FmtYearWeekNumber="Week " &numWeekInYear
+  Else
+    IT2FmtYearWeekNumber="n/a"
+  End If  
+ End Function
+
+'Global variables for IT2Utils functions
+Dim g_it2utilsAmountsObject
+Dim g_it2utilsGeneralObject
+Dim g_it2utilsTermObject
+Dim g_it2utilsRateObject
+Dim g_it2utilsReferenceObject
+
+Function IT2UtilsBaseCurrency()
+  ' Returns the code of the system base currency
+  '
+  Call IT2UtilsInitialise
+  IT2UtilsBaseCurrency = g_it2utilsGeneralObject.BaseCurrency
+End Function
+
+Function IT2UtilsCalcFractOfYear(dateStart, dateEnd, includeStartEndFlag, basis)
+  ' Returns the year fraction of an interest period
+  '
+  ' Values for basis:
+  ' "0" - 360D
+  ' "1" - 365
+  ' "A" - Actual/Actual
+  ' "B" - Actual/Actual (Period End)
+  ' "C" - Constant
+  ' "D" - 30D/360 (German/Swiss)
+  ' "E" - 30D/360 (EuroBond/US)
+  ' "F" - 365 (DEM FRNs 30/365)
+  ' "G" - 365/365 Japanese 
+  '
+  ' Values for includeStartEndFlag:
+  ' 0 - Exclude both dateStart and dateEnd
+  ' 1 - include dateStart only
+  ' 2 - include dateEnd only
+  ' 3 - include dateStart and dateEnd
+  '
+  Call IT2UtilsInitialise
+  IT2UtilsCalcFractOfYear = g_it2utilsTermObject.CalcFractOfYear(CLng(dateStart) - 22646, CLng(dateEnd) - 22646, includeStartEndFlag, basis)
+End Function  
+
+Function IT2UtilsCalcNumOfDays(dateStart, dateEnd, includeStartEndFlag, basis)
+  ' Returns the number of interest days in a period
+  '
+  ' Values for basis:
+  ' "0" - 360D
+  ' "1" - 365
+  ' "A" - Actual/Actual
+  ' "B" - Actual/Actual (Period End)
+  ' "C" - Constant
+  ' "D" - 30D/360 (German/Swiss)
+  ' "E" - 30D/360 (EuroBond/US)
+  ' "F" - 365 (DEM FRNs 30/365)
+  ' "G" - 365/365 Japanese 
+  '
+  ' Values for includeStartEndFlag:
+  ' 0 - Exclude both dateStart and dateEnd
+  ' 1 - include dateStart only
+  ' 2 - include dateEnd only
+  ' 3 - include dateStart and dateEnd
+  '
+  Call IT2UtilsInitialise
+  IT2UtilsCalcNumOfDays = g_it2utilsTermObject.CalcNumOfDays(CLng(dateStart) - 22646, CLng(dateEnd) - 22646, includeStartEndFlag, basis)
+End Function  
+
+Function IT2UtilsCurrencyPair(Currency1, Separator, Currency2, blnUnitCurrencyFirst)
+  ' Returns an ordered currency code pair from two currency codes
+  ' The order is determined by blnUnitCurrencyFirst
+  ' The string specified in Separator is placed betweem the two codes
+  Call IT2UtilsInitialise
+  IT2UtilsCurrencyPair = g_it2utilsGeneralObject.CurrencyPair(Currency1, Separator, Currency2, blnUnitCurrencyFirst)
+End Function
+
+Function IT2UtilsGetDecimalPlaces(currCode)
+  ' Returns the number of decimal places for rounding a currency
+  '
+  Call IT2UtilsInitialise
+  IT2UtilsGetDecimalPlaces = g_it2utilsAmountsObject.GetDecimalPlaces(currCode)
+End Function
+
+Sub IT2UtilsInitialise
+  ' Internal function called by other IT2Utils functions
+  If IsEmpty(g_it2utilsAmountsObject) Then
+    Set g_it2utilsAmountsObject = CreateObject("CRUFLIT2.Amounts")
+    Set g_it2utilsGeneralObject = CreateObject("CRUFLIT2.General")
+    Set g_it2utilsTermObject = CreateObject("CRUFLIT2.Term")
+    Set g_it2utilsRateObject = CreateObject("CRUFLIT2.Rate")
+    Set g_it2utilsReferenceObject = CreateObject("CRUFLIT2.Reference")
+  End If 
+End Sub  
+
+Function IT2UtilsIntHistRatesFromYieldCurve(strCurrency, YieldCurve, OnDate, AtDate, RateClass)
+  'Currency:        ISO currency code.
+  '
+  'YieldCurve:      Yield curve code.
+  '
+  'OnDateNum:       IT2 date number on which to calculate the interest rate.
+  '
+  'AtDateNum:       IT2 date number on which to base historic curve.
+  '
+  'RateClass:       Type of rate to use ...
+  '                 
+  '                 INTRATE_BORROW          1
+  '                 INTRATE_LEND            2
+  '                 INTRATE_MID_POINT       3
+  '                 INTRATE_CLOSE_INFLOW    4
+  '                 INTRATE_CREATE_OUTFLOW  5
+  '                 INTRATE_CLOSE_OUTFLOW   6
+  '                 INTRATE_CREATE_INFLOW   7
+  '                 INTRATE_ZERO_COUPON     8
+  '                 INTRATE_BID            11 (No Interpolation will be done)
+ '                 INTRATE_OFFER          12 (No Interpolation will be done)
+  '
+  'The interest rate table is sequentially accessed for the rows nearest to
+  'OnDateNum. Four outcomes are possible:-
+  '
+  '1) OnDateNum is earlier than the earliest available database date,
+  '2) OnDateNum is later than the latest available database date,
+  '3) OnDateNum exactly matches a database date,
+  '4) OnDateNum is between two adjacent database dates.
+  '
+  'If 1) or 2), the earliest or latest required (RateClass) rate is returned with no
+  'extrapolation.
+  '
+  'If 3), the matching (RateClass) rate is returned.
+  '
+  'If 4), the two (RateClass) rates are interpolated to provide the returned rate.
+  '
+  Call IT2UtilsInitialise
+  IT2UtilsIntHistRatesFromYieldCurve = g_it2utilsRateObject.IntHistRatesFromYieldCurve(strCurrency, YieldCurve, OnDate, AtDate, RateClass)
+End Function  
+
+Function IT2UtilsGetInterpolatedCommodityPrice(intPriceSide, dateAsOf, dateValue, strCommodityCode, strPriceSetCode)
+  ' Returns a interpolated commodity price
+  ' 
+  ' Values for strPriceSide:   Bid       -- 0
+  '                            Offer     -- 1
+  '                            MidPoint  -- 2                        
+  Call IT2UtilsInitialise
+  IT2UtilsGetInterpolatedCommodityPrice = g_it2utilsRateObject.GetInterpolatedCommodityPrice(intPriceSide, CLng(dateAsOf) - 22646, CLng(dateValue) - 22646, strCommodityCode, strPriceSetCode)
+End Function
+
+
+Function IT2UtilsGetReferenceID(strReference, strReferenceType)
+  ' Returns a reference ID (long) from a reference string
+  
+  ' Values for strReferenceType:
+  ' D - Deal
+  ' I - Issue
+  ' There is scope to add more to this list as required.
+  Call IT2UtilsInitialise
+  
+  Select Case strReferenceType
+    Case "D"
+      IT2UtilsGetReferenceID = g_it2utilsReferenceObject.DealRefToID(strReference)
+    Case "I"
+      IT2UtilsGetReferenceID = g_it2utilsReferenceObject.IssueRefToID(strReference)
+    Case Else
+      ' Catch-all for lazy coders
+      IT2UtilsGetReferenceID = g_it2utilsReferenceObject.DealRefToID(strReference)
+  End Select
+End Function
+
+Function IT2UtilsInterestAmountFirstLast(amtPrincipal, rateInterest, dateStart, dateEnd, basis, constantBasisFrequency, includeStartEndFlag)
+  ' Returns a simple interest amount
+  '
+  ' Values for basis:
+  ' 0 - 360D
+  ' 1 - 365
+  ' A - Actual/Actual
+  ' B - Actual/Actual (Period End)
+  ' C - Constant
+  ' D - 30D/360 (German/Swiss)
+  ' E - 30D/360 (EuroBond/US)
+  ' F - 365 (DEM FRNs 30/365)
+  ' G - 365/365 Japanese 
+  '
+  ' Values for constantBasisFrequency (only relevant if basis is C): 
+  ' 1 - Single
+  ' M - Monthly
+  ' B - Bi-monthly
+  ' Q - Quarterly
+  ' S - Semi-annual
+  ' A - Annual
+  '
+  ' Values for includeStartEndFlag (number):
+  ' 0 - Exclude both dateStart and dateEnd
+  ' 1 - include dateStart only
+  ' 2 - include dateEnd only
+  ' 3 - include dateStart and dateEnd
+  '
+  Call IT2UtilsInitialise
+  IT2UtilsInterestAmountFirstLast = g_it2utilsAmountsObject.InterestAmountFirstLast(amtPrincipal, rateInterest, CLng(dateStart) - 22646, CLng(dateEnd) - 22646, basis, constantBasisFrequency, includeStartEndFlag)
+End Function  
+
+Function IT2UtilsGetCrossRate(intRateFormat, strRateType, strCurr1, strCurr2, dateRate, dateAtForHistoric, intRateClass, intUseHistoric)
+  ' Returns an FX rate
+  ' Values for intRateFormat:
+  '                         Amount Curr. 1
+  ' 0 - Calculation rate  = --------------
+  '                         Amount Curr. 2
+  '                        
+  ' 1 - Display Rate
+ '
+  ' Values for strRateType:
+  ' A - Accounting
+  ' B - Book
+  ' I - Instruction
+  ' M - Market
+  ' N - Netting
+  ' U - User
+  ' or single letter code for any additional user-defined rate set that has been set up
+  '
+  ' Values for intRateClass
+  ' 1 - Midpoint
+  ' 2 - Close inflow   (buy curr. 2, sell curr. 1)
+  ' 3 - Create outflow (buy curr. 2, sell curr. 1)
+  ' 4 - Close outflow  (buy curr. 1, sell curr. 2)
+  ' 5 - Create inflow  (buy curr. 1, sell curr. 2)
+  '
+  ' Values for intUseHistoric:
+  ' 0 - Don't use historic rates (dateAtForHistoric is ignored)
+  ' 1 -  use historic rates as of dateAtForHistoric
+  Call IT2UtilsInitialise
+  IT2UtilsGetCrossRate = g_it2utilsRateObject.GetCrossRate(intRateFormat, strRateType, strCurr1, strCurr2, CLng(dateRate) - 22646, CLng(dateAtForHistoric) - 22646, intRateClass, intUseHistoric)
+End Function
+
+Function IT2UtilsGetIssueMarketPrice(strIssueRef, dateFrom, dateTo, intAccrualOptions, strBidOrOffer)
+  ' Returns a market price for an issue for given date range
+  ' To get the market price for a single date, 
+  ' consider using IT2UtilsGetIssueMarketPriceOnDate
+  '
+  ' strIssueRef Format:
+  ' e.g. "FXF335"
+  '
+  ' Values for intAccrualOptions:
+  ' 1 - Accrue to Start
+  ' 2 - Accrue to End
+  '
+  ' Values for strBidOrOffer
+  ' B - Get Bid Rate
+  ' O - Get Offer Rate
+  Call IT2UtilsInitialise
+  Dim strIssueID
+  strIssueID = g_it2utilsReferenceObject.IssueRefToID(strIssueRef)
+  IT2UtilsGetIssueMarketPrice = g_it2utilsAmountsObject.IssueMarketPrice(strIssueID, CLng(dateFrom) - 22646, CLng(dateTo) - 22646, intAccrualOptions, strBidOrOffer)
+End Function
+
+Function IT2UtilsGetIssueMarketPriceOnDate(strIssueRef, dateOn)
+  ' Returns the current market price for an issue on a given date.
+  ' strIssueRef Format:
+  ' e.g. "FXF335"
+  Call IT2UtilsInitialise
+  Dim strIssueID
+  strIssueID = g_it2utilsReferenceObject.IssueRefToID(strIssueRef)
+  IT2UtilsGetIssueMarketPriceOnDate = g_it2utilsAmountsObject.IssueMarketPrice(strIssueID, CLng(dateOn) - 22646, CLng(dateOn) - 22646, 1, "B")
+End Function
+
+Function IT2UtilsGetIssueSplitRatio(strIssueRef, dateFrom, dateTo)
+  ' Returns the product of ratios for splits occurring within the given date range
+  ' strIssueRef Format:
+  ' e.g. "FXF335"
+  '
+  '
+  Call IT2UtilsInitialise
+  Dim strIssueID
+  strIssueID = g_it2utilsReferenceObject.IssueRefToID(strIssueRef)
+  IT2UtilsGetIssueSplitRatio = g_it2utilsAmountsObject.IssueSplitRatio(strIssueID, CLng(dateFrom) - 22646, CLng(dateTo) - 22646)
+End Function
+
+Function IT2UtilsHedgeItemStatus(strStatus)
+  ' Returns a shorter version of status
+  ' and assumes tial deals to be 
+  ' hypothetical derivatives
+  ' 
+  '
+  if strStatus = "Unverified" then
+  IT2UtilsHedgeItemStatus = "Unverified"
+  Elseif strStatus = "Edited - unverified" then
+  IT2UtilsHedgeItemStatus = "Unverified"
+  Elseif strStatus = "Verified" then
+  IT2UtilsHedgeItemStatus = "Verified"
+  Elseif strStatus = "Edited - verified" then
+  IT2UtilsHedgeItemStatus = "Verified"
+  Elseif strStatus = "Trial" then
+  IT2UtilsHedgeItemStatus = "Hypothetical"
+  else
+  IT2UtilsHedgeItemStatus = strStatus
+  End if
+  
+End Function
+
+Function IT2UtilsExposurePL(amtHedgeTMV,rateEffectiveness,strIsEffective)
+  ' Returns the amount to post to P&L for a fair
+  ' value hedge 
+  ' 
+  '
+  if strIsEffective = "Yes" then
+  IT2UtilsExposurePL = -amtHedgeTMV*100/rateEffectiveness
+  else
+  IT2UtilsExposurePL = 0
+  End if
+  
+End Function
+
+Function IT2FmtShortTermLongTerm(dtmToday, dtmFlow, dtmInterval)
+  ' Usage: Formatting Formula
+  ' Returns "Short Term" if less than interval, otherwise "Long Term"
+  ' 
+  Dim Days
+  Days = cLng(dtmFlow - dtmToday)
+  If Days > dtmInterval then
+          IT2FmtShortTermLongTerm = "Long Term"
+  Else 
+          IT2FmtShortTermLongTerm = "Short Term"
+  End If
+   
+End Function  
+
+Function IT2FmtRiskTypeOrInception(dtmAsOf, dtmInception, strRiskType)
+  ' Usage: Formatting Formula
+  ' Returns the risk type unless the as of is the inception date
+  ' 
+  If dtmAsOf = dtmInception then
+          IT2FmtRiskTypeOrInception = "_Inception Values"
+  Else 
+          IT2FmtRiskTypeOrInception = strRiskType
+  End If
+   
+End Function  
+
+Function IT2FmtIsHypothetical(strDealRef)
+  ' Usage: Formatting Formula
+  ' Returns "Hypothetical" if reference contains "@" otherwise "Real Derivative"
+  ' 
+  If Instr(strDealRef,"@")>0 then
+          IT2FmtIsHypothetical = "Hypothetical"
+  Else 
+          IT2FmtIsHypothetical = "Real Derivative"
+  End If
+   
+End Function  
+
+Function IT2CalcFundingType(tranType,FlowType)
+  ' Usage: Formula Field
+  ' Returns the origin of a position based on the transaction type as follows
+  '   
+  If tranType = "CPF" Then   
+    IT2CalcFundingType = "02 "& FlowType 
+  ElseIf tranType = "ACC" Then 
+    IT2CalcFundingType = "01 Account Balances (Cash)" 
+  ElseIf Instr(":LFI:LFL:LZC:LAP:", ":" & tranType & ":") <> 0 Then
+    IT2CalcFundingType = "03 Maturing Loans" 
+  ElseIf Instr(":DFI:DFL:DZC:", ":" & tranType & ":") <> 0 Then
+    IT2CalcFundingType = "03 Maturing Deposits" 
+  Else 
+    IT2CalcFundingType = "04 Other" 
+  End If
+End Function
+
+Function IT2CalcForecastVariance(amtDiff, amtReported)
+  ' Usage : Formula Field
+  ' Returns Forecast variance as percentage of reported amount
+  ' Returns 100% if no reported mount present
+  if amtReported = 0 then 
+    IT2CalcForecastVariance = 100
+  End if
+    
+ if amtReported <> 0 then
+   IT2CalcForecastVariance = 100 * (amtDiff / amtReported) 
+  End if
+End Function
+
+function StatusIcon(Value)
+' Usage : A Tick for Value above 0, Check for 0.
+if Value>0 then
+StatusIcon = "Cross"
+else
+StatusIcon = "Check"
+end if
+end function
+
+function KPIStatusGreater(KPIValue,BandRed,BandAmber,BandGreen)
+' Usage : Returns traffic lights based on supplied value and boundaries
+if KPIValue>BandGreen then
+KPIStatusGreater = "Circle_Green"
+elseif KPIValue>BandAmber then
+KPIStatusGreater = "Circle_Amber"
+elseif KPIValue>BandRed then 
+KPIStatusGreater = "Circle_Red"
+else
+KPIStatusGreater = "Circle_Black"
+end if
+end function
+
+function KPIStatusLess(KPIValue,BandGreen,BandAmber,BandRed)
+' Usage : Returns traffic lights based on supplied value and boundaries
+if abs(KPIValue)<BandGreen then
+KPIStatusLess = "Circle_Green"
+elseif abs(KPIValue)<BandAmber then
+KPIStatusLess = "Circle_Amber"
+elseif abs(KPIValue)<BandRed then 
+KPIStatusLess = "Circle_Red"
+else
+KPIStatusLess = "Circle_Black"
+end if
+end function
+
+function PaymentStatus(NextAction,EFTStatus,SendPrint)
+' Usage : Returns a single status field for payments
+PaymentStatus=NextAction
+if NextAction="None" then
+if EFTStatus="Succeeded" or EFTStatus="Failed" then
+PaymentStatus=EFTStatus
+else
+PaymentStatus="Delivered"
+end if
+end if
+if SendPrint="Terminated" then
+PaymentStatus="Terminated"
+end if
+end function
+
+function PaymentStatusIcon(Status)
+' Usage : Returns traffic lights and other icons based on payment status
+if Status="Verify deal" then 
+PaymentStatusIcon="Circle_Black" 
+elseif Status="Repair" then 
+PaymentStatusIcon="Warning" 
+elseif Status="Delivered" then 
+PaymentStatusIcon="Circle_Green"
+elseif Status="Succeeded" then 
+PaymentStatusIcon="Check" 
+elseif Status="Failed" then 
+PaymentStatusIcon="Cross"
+elseif Status="Terminated" then 
+PaymentStatusIcon="Negative"
+else PaymentStatusIcon="Circle_Amber"
+end if
+end function
+
+function HedgeRatio(amtExposure,amtHedge)
+' Usage : Calculated the hedge ratio on the FX exposure mgt workbenches
+if abs(amtExposure)>0 then
+HedgeRatio = round(100*amtHedge/amtExposure,2)
+else
+HedgeRatio = 0
+end if
+End Function
+
+function TradesRequired(CountType,PolicyText)
+' Usage : Counts the number of trades required depending on CountType
+' If CountType = 1 it sets the hedge count to 1 for each trade
+' If CountType = 0 the functino counts the number of hedges required at the level below its group
+if CountType=1 then
+  if PolicyText="UNDERHEDGED" then
+  TradesRequired=1
+  elseif PolicyText="OVERHEDGED" then
+  TradesRequired=1
+  else
+  TradesRequired=0
+  end if
+else
+TradesRequired=0
+SummaryArray=Grid.GroupSummaryValues(1)
+i = 0  
+Do While i <= UBound(SummaryArray) 
+  TradesRequired = TradesRequired + SummaryArray(i)     
+  i = i + 1 
+  Loop
+end if
+end function
+
+function TradesRequiredText(Trades)
+' Usage : Creates the text for the number of hedges given the number
+if Trades>1 then
+TradesRequiredText = Trades&" HEDGES REQUIRED"
+elseif Trades>0 then
+TradesRequiredText = Trades&" HEDGE REQUIRED"
+else
+TradesRequiredText = ""
+end if
+end function
+
+Function GetLookupValue(strLookupName, strLookupIndex)
+  ' Gets a value from the look up tables given a name and index                        
+  Call IT2UtilsInitialise
+  GetLookupValue = g_it2utilsGeneralObject.GetLookupValue(strLookupName, strLookupIndex)
+End Function
+
+Function GetLookupValueWithLang(strLookupName, strLookupIndex, strLanguage)
+  ' Gets a value from the look up tables given a name, index and language                       
+  Call IT2UtilsInitialise
+  GetLookupValueWithLang = g_it2utilsGeneralObject.GetLookupValueWithLang(strLookupName, strLookupIndex, strLanguage)
+End Function
+
+' These should be const but causes error because of redefinition by the parse on save option
+Dim ionBrightGreen
+Dim ionBrightJade
+Dim ionLightYellow
+Dim ionLightSand
+Dim ionLightBrown
+Dim ionBrightOrange
+Dim ionBrightRed
+Dim ionLightGrey
+Dim ionLightPeach
+Dim ionLightStone
+Dim ionBrightBlue
+Dim ionBrightPurple
+
+ionBrightGreen = 6932630 'RGB(150,200,105)
+ionBrightJade = 9875200 'RGB(0,175,150)
+ionLightYellow = 7260415 'RGB(255,200,110)
+ionLightSand = 11328234 'RGB(234,218,172)
+ionLightBrown = 7897760 'RGB(160,130,120)
+ionBrightOrange = 4623605 'RGB(245,140,70)
+ionBrightRed = 4277975 'RGB(215,70,65)
+ionLightGrey = 11841455 'RGB(175,175,180)
+ionLightPeach = 9547770 'RGB(250,175,145)
+ionLightStone = 14805232 'RGB(240,232,225)
+ionBrightBlue = 15115520 'RGB(0,165,230)
+ionBrightPurple = 11497070 'RGB(110,110,175)
+
+Function MatchQuality()
+  Dim AmountMultiplier
+  Dim DateMultiplier
+  Dim MatchRatio
+  AmountMultiplier = 100 ' Adjust depending on importance of closeness of amounts
+  DateMultiplier = 1.5 ' Adjust depending on importance of closeness of dates
+  MatchRatio = 0
+  if (Grid.Field("Amount") + Grid.Field("AmountDiff")) <> 0 Then
+    MatchRatio = ((Grid.Field("AmountDiff")/(Grid.Field("Amount") + Grid.Field("AmountDiff")))*AmountMultiplier) + CInt(Grid.Field("DateDiff"))*DateMultiplier
+    if MatchRatio = 0 Then
+     MatchQuality = ionBrightGreen
+    elseif MatchRatio <=1 Then
+      MatchQuality = ionBrightJade
+    elseif MatchRatio <=2 Then
+      MatchQuality = ionLightYellow
+    elseif MatchRatio <=3 Then
+      MatchQuality = ionBrightOrange
+    else
+      MatchQuality = ionBrightRed
+    end if
+  end if
+End Function
+' ******* Dispersion Report Formulas  *******
+
+' For weekly we define a week as being in a month if the monday is in the month
+Function GetMonday(d)
+GetMonday = DateAdd("d", 1 - WeekDay(d, 2), d)
+End Function
+
+Function PayRec()
+IF Grid.Field("FundsType")="TR" OR Grid.Field("FundsType")="RC" OR Grid.Field("FundsType")="I9" OR Grid.Field("FundsType")="I8" THEN
+  PayRec = "Receivables 3rd&ICop"
+ELSE
+  PayRec = "Payables 3rd&ICop"
+END IF
+END FUNCTION
+
+
+Function ABSDiff()
+ABSDiff = ABS(Grid.GroupDataValues("Amount(2)")(0) - Grid.Field("Amount(2)")) 
+End Function
+
+Function ABSDiffGrp()
+ABSDiffGrp = ABS(Grid.SuperGroupSummaryValue(1,"Amount(2)")(0) - Grid.Field("Amount(2)")) 
+End Function
+
+Function PCAvgDiff()
+SumAbsDiff = 0
+IF Grid.Field("Formula(3)") = 0 THEN
+  PCAvgDiff = 100
+ELSE
+  PCAvgDiff = ABS(Grid.Field("Formula"))/Grid.Field("Formula(3)")*100
+END IF
+End Function
+
+Function GetSummary()
+GetSummary = 0
+For i = 0 TO UBound(Grid.GroupSummaryValues(1))
+   If Grid.GroupSummaryValues(1)(i) <> 0  Then 
+    GetSummary = Grid.GroupSummaryValues(1)(i)
+    Exit For
+  End If
+Next 
+End Function
+
+Function BlankIfNoData(datavalue)
+Dim arrvalues
+arrValues = Grid.GroupDataValues(0)
+blank = True
+For i = 0 TO UBound(arrValues)
+  If Not(IsEmpty(arrValues(i)) Or IsNull(arrValues(i))) Then 
+    blank = False 
+    Exit For
+  End If
+Next  
+If blank = False Then 
+  BlankIfNoData = datavalue 
+Else 
+  BlankIfNoData = 0
+End If
+End Function
+
+Function ForecastVersion()
+IF Grid.Field("FlowState")="Actual" THEN
+  ForecastVersion = "A0"
+ELSE
+  ForecastVersion = "F" + LEFT(Grid.Field("FundsSubType"),1)
+END IF
+END FUNCTION
+
+Function SumGroup()
+SumGroup = 0
+For Each Amt in Grid.GroupSummaryValues(1)
+  IF Amt <>"" AND Amt<>0 THEN SumGroup = SumGroup + Amt
+Next
+End Function
+
+Function SumGroupABS()
+SumGroupABS = 0
+For Each Amt in Grid.GroupSummaryValues(1)
+  IF Amt <>"" AND Amt<>0 THEN SumGroupABS = SumGroupABS + ABS(Amt)
+Next
+End Function
+
+Function ABSAvgDiff()
+AbsDiffSum = SumGroup()
+IF Grid.Field("Formula(4)")<DipsersionWeeks THEN
+AbsDiffSum = AbsDiffSum + ABS(((DipsersionWeeks - Grid.Field("Formula(4)")) * Grid.Field("Formula(3)")))
+END IF
+ABSAvgDiff = AbsDiffSum/DipsersionWeeks
+End Function
+
+
+
+' ******* DCF Report Formulas  *******
+Function AmountIfActualOrTodayForecast(Amount, ForecastDate, FlowState)
+
+If FlowState = "Actual" Then
+  AmountIfActualOrTodayForecast = Amount
+ElseIf FlowState = "Forecast" And CDate(ForecastDate) = Grid.AnchorDate Then  
+  AmountIfActualOrTodayForecast = Amount
+Else
+  AmountIfActualOrTodayForecast = 0
+End if
+
+End Function
+
+Function DCFGroupingLevel0Dictionary(FundsType)
+   Dim dictionaryLevel
+   Set dictionaryLevel = CreateObject("Scripting.Dictionary")
+
+   dictionaryLevel.Add "CF", "TOTAL FLOW"    
+   dictionaryLevel.Add "RC", "TOTAL FLOW"
+   dictionaryLevel.Add "TR", "TOTAL FLOW"
+   dictionaryLevel.Add "RT", "TOTAL FLOW"
+   dictionaryLevel.Add "DD", "TOTAL FLOW"
+   dictionaryLevel.Add "KA", "TOTAL FLOW"
+   dictionaryLevel.Add "K0", "TOTAL FLOW"
+   dictionaryLevel.Add "K1", "TOTAL FLOW"
+   dictionaryLevel.Add "K2", "TOTAL FLOW"
+   dictionaryLevel.Add "K3", "TOTAL FLOW"
+   dictionaryLevel.Add "K4", "TOTAL FLOW"
+   dictionaryLevel.Add "K5", "TOTAL FLOW"
+   dictionaryLevel.Add "K6", "TOTAL FLOW"
+   dictionaryLevel.Add "K7", "TOTAL FLOW"
+   dictionaryLevel.Add "K8", "TOTAL FLOW"
+   dictionaryLevel.Add "K9", "TOTAL FLOW"
+   dictionaryLevel.Add "OK", "TOTAL FLOW"
+   dictionaryLevel.Add "WH", "TOTAL FLOW"
+   dictionaryLevel.Add "EX", "TOTAL FLOW"
+   dictionaryLevel.Add "NR", "TOTAL FLOW"
+   dictionaryLevel.Add "GT", "TOTAL FLOW"
+   dictionaryLevel.Add "G1", "TOTAL FLOW"
+   dictionaryLevel.Add "G2", "TOTAL FLOW"
+   dictionaryLevel.Add "G3", "TOTAL FLOW"
+   dictionaryLevel.Add "G4", "TOTAL FLOW"
+   dictionaryLevel.Add "G5", "TOTAL FLOW"
+   dictionaryLevel.Add "CN", "TOTAL FLOW"
+   dictionaryLevel.Add "VO", "TOTAL FLOW"
+   dictionaryLevel.Add "CL", "TOTAL FLOW"
+   dictionaryLevel.Add "XR", "TOTAL FLOW"
+   dictionaryLevel.Add "TH", "TOTAL FLOW"
+   dictionaryLevel.Add "PY", "TOTAL FLOW"
+   dictionaryLevel.Add "TP", "TOTAL FLOW"
+   dictionaryLevel.Add "PT", "TOTAL FLOW"
+   dictionaryLevel.Add "RM", "TOTAL FLOW"
+   dictionaryLevel.Add "PK", "TOTAL FLOW"
+   dictionaryLevel.Add "M0", "TOTAL FLOW"
+   dictionaryLevel.Add "M1", "TOTAL FLOW"
+   dictionaryLevel.Add "M2", "TOTAL FLOW"
+   dictionaryLevel.Add "L0", "TOTAL FLOW"
+   dictionaryLevel.Add "L1", "TOTAL FLOW"
+   dictionaryLevel.Add "L2", "TOTAL FLOW"
+   dictionaryLevel.Add "L3", "TOTAL FLOW"
+   dictionaryLevel.Add "U0", "TOTAL FLOW"
+   dictionaryLevel.Add "U1", "TOTAL FLOW"
+   dictionaryLevel.Add "U2", "TOTAL FLOW"
+   dictionaryLevel.Add "S0", "TOTAL FLOW"
+   dictionaryLevel.Add "S1", "TOTAL FLOW"
+   dictionaryLevel.Add "S2", "TOTAL FLOW"
+   dictionaryLevel.Add "S3", "TOTAL FLOW"
+   dictionaryLevel.Add "S4", "TOTAL FLOW"
+   dictionaryLevel.Add "S5", "TOTAL FLOW"
+   dictionaryLevel.Add "O0", "TOTAL FLOW"
+   dictionaryLevel.Add "O1", "TOTAL FLOW"
+   dictionaryLevel.Add "O2", "TOTAL FLOW"
+   dictionaryLevel.Add "O3", "TOTAL FLOW"
+   dictionaryLevel.Add "X0", "TOTAL FLOW"
+   dictionaryLevel.Add "X1", "TOTAL FLOW"
+   dictionaryLevel.Add "X2", "TOTAL FLOW"
+   dictionaryLevel.Add "X3", "TOTAL FLOW"
+   dictionaryLevel.Add "X4", "TOTAL FLOW"
+   dictionaryLevel.Add "0F", "TOTAL FLOW"
+   dictionaryLevel.Add "1F", "TOTAL FLOW"
+   dictionaryLevel.Add "2F", "TOTAL FLOW"
+   dictionaryLevel.Add "P0", "TOTAL FLOW" 
+   dictionaryLevel.Add "P1", "TOTAL FLOW"
+   dictionaryLevel.Add "P2", "TOTAL FLOW"
+   dictionaryLevel.Add "P3", "TOTAL FLOW"
+   dictionaryLevel.Add "P4", "TOTAL FLOW"
+   dictionaryLevel.Add "T1", "TOTAL FLOW"
+   dictionaryLevel.Add "T2", "TOTAL FLOW"
+   dictionaryLevel.Add "T5", "TOTAL FLOW"
+   dictionaryLevel.Add "T4", "TOTAL FLOW"
+   dictionaryLevel.Add "LC", "TOTAL FLOW"
+   dictionaryLevel.Add "RE", "TOTAL FLOW"
+   dictionaryLevel.Add "N0", "TOTAL FLOW"
+   dictionaryLevel.Add "N1", "TOTAL FLOW"
+   dictionaryLevel.Add "N2", "TOTAL FLOW"
+   dictionaryLevel.Add "N3", "TOTAL FLOW"
+   dictionaryLevel.Add "N4", "TOTAL FLOW"
+   dictionaryLevel.Add "N5", "TOTAL FLOW"
+   dictionaryLevel.Add "N6", "TOTAL FLOW"
+   dictionaryLevel.Add "I8", "TOTAL FLOW"
+   dictionaryLevel.Add "I9", "TOTAL FLOW"
+   dictionaryLevel.Add "PB", "TOTAL FLOW"
+   dictionaryLevel.Add "PN", "TOTAL FLOW"
+   dictionaryLevel.Add "IL", "TOTAL FLOW"
+   dictionaryLevel.Add "II", "TOTAL FLOW"
+   dictionaryLevel.Add "SR", "TOTAL FLOW"
+   dictionaryLevel.Add "CT", "TOTAL FLOW"
+   dictionaryLevel.Add "CI", "TOTAL FLOW"
+   dictionaryLevel.Add "CU", "TOTAL FLOW"
+   dictionaryLevel.Add "NN", "TOTAL FLOW"
+   dictionaryLevel.Add "NC", "TOTAL FLOW"
+   dictionaryLevel.Add "3D", "TOTAL FLOW"
+   dictionaryLevel.Add "ID", "TOTAL FLOW"
+   dictionaryLevel.Add "3I", "TOTAL FLOW"
+   dictionaryLevel.Add "I3", "TOTAL FLOW"
+   dictionaryLevel.Add "FH", "TOTAL FLOW"
+   dictionaryLevel.Add "MA", "TOTAL FLOW"
+   dictionaryLevel.Add "BA", "TOTAL FLOW" 
+   dictionaryLevel.Add "OI", "TOTAL FLOW" 
+   dictionaryLevel.Add "CD", "TOTAL FLOW"
+
+   dictionaryLevel.Add "2N", "Notional Cash Pool Flows" 
+   dictionaryLevel.Add "1N", "Notional Cash Pool Flows"
+                                       
+   DCFGroupingLevel0Dictionary = dictionaryLevel(FundsType)
+End Function
+
+Function DCFGroupingLevel1Dictionary(FundsType)
+   Dim dictionaryLevel
+   Set dictionaryLevel = CreateObject("Scripting.Dictionary")
+
+   dictionaryLevel.Add "CF", "Operational Cash Flow 3P"    
+   dictionaryLevel.Add "RC", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "TR", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "RT", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "DD", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "KA", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "K0", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "K1", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "K2", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "K3", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "K4", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "K5", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "K6", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "K7", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "K8", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "K9", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "OK", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "WH", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "EX", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "NR", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "GT", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "G1", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "G2", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "G3", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "G4", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "G5", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "CN", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "VO", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "CL", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "XR", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "TH", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "PY", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "TP", "Operational Cash Flow 3P"  
+   dictionaryLevel.Add "PT", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "RM", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "PK", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "M0", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "M1", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "M2", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "L0", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "L1", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "L2", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "L3", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "U0", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "U1", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "U2", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "S0", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "S1", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "S2", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "S3", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "S4", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "S5", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "O0", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "O1", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "O2", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "O3", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "X0", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "X1", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "X2", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "X3", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "X4", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "0F", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "1F", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "2F", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "P0", "Operational Cash Flow 3P"   
+   dictionaryLevel.Add "P1", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "P2", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "P3", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "P4", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "T1", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "T2", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "T5", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "T4", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "LC", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "RE", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "N0", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "N1", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "N2", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "N3", "Operational Cash Flow 3P" 
+   dictionaryLevel.Add "N4", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "N5", "Operational Cash Flow 3P"
+   dictionaryLevel.Add "N6", "Operational Cash Flow 3P"  
+   
+   dictionaryLevel.Add "I8", "Operational IC Flows" 
+   dictionaryLevel.Add "I9", "Operational IC Flows" 
+   dictionaryLevel.Add "PB", "Operational IC Flows" 
+   dictionaryLevel.Add "PN", "Operational IC Flows"    
+ 
+   dictionaryLevel.Add "IL", "Financial IC Flows" 
+   dictionaryLevel.Add "II", "Financial IC Flows" 
+   dictionaryLevel.Add "SR", "Financial IC Flows" 
+   dictionaryLevel.Add "CT", "Financial IC Flows" 
+   dictionaryLevel.Add "CI", "Financial IC Flows" 
+   dictionaryLevel.Add "CU", "Financial IC Flows" 
+   dictionaryLevel.Add "NN", "Financial IC Flows" 
+   dictionaryLevel.Add "NC", "Financial IC Flows"
+
+   dictionaryLevel.Add "3D", "Financial Cash Flow 3P" 
+   dictionaryLevel.Add "ID", "Financial Cash Flow 3P" 
+   dictionaryLevel.Add "3I", "Financial Cash Flow 3P" 
+   dictionaryLevel.Add "I3", "Financial Cash Flow 3P" 
+   dictionaryLevel.Add "FH", "Financial Cash Flow 3P" 
+   dictionaryLevel.Add "MA", "Financial Cash Flow 3P"
+
+   dictionaryLevel.Add "BA", "Reconciliation Adjustments" 
+   dictionaryLevel.Add "OI", "Reconciliation Adjustments" 
+   dictionaryLevel.Add "CD", "Reconciliation Adjustments"
+
+   dictionaryLevel.Add "2N", "Notional Cash Pool Flows" 
+   dictionaryLevel.Add "1N", "Notional Cash Pool Flows"
+                                       
+   DCFGroupingLevel1Dictionary = dictionaryLevel(FundsType)
+End Function
+
+Function DCFGroupingLevel2Dictionary(FundsType)
+   Dim dictionaryLevel
+   Set dictionaryLevel = CreateObject("Scripting.Dictionary")
+
+   dictionaryLevel.Add "CF", "Operational Cash Flow 3P" 
+    
+   dictionaryLevel.Add "RC", "Receivables 3rd party" 
+   dictionaryLevel.Add "TR", "Receivables 3rd party"
+   dictionaryLevel.Add "RT", "Receivables 3rd Party"
+   dictionaryLevel.Add "DD", "Receivables 3rd Party"
+   dictionaryLevel.Add "KA", "Receivables 3rd Party" 
+   dictionaryLevel.Add "K0", "Receivables 3rd Party"
+   dictionaryLevel.Add "K1", "Receivables 3rd Party"
+   dictionaryLevel.Add "K2", "Receivables 3rd Party" 
+   dictionaryLevel.Add "K3", "Receivables 3rd Party" 
+   dictionaryLevel.Add "K4", "Receivables 3rd Party"
+   dictionaryLevel.Add "K5", "Receivables 3rd Party"
+   dictionaryLevel.Add "K6", "Receivables 3rd Party"
+   dictionaryLevel.Add "K7", "Receivables 3rd Party" 
+   dictionaryLevel.Add "K8", "Receivables 3rd Party"
+   dictionaryLevel.Add "K9", "Receivables 3rd Party"
+   dictionaryLevel.Add "OK", "Receivables 3rd Party" 
+   dictionaryLevel.Add "WH", "Receivables 3rd Party" 
+   dictionaryLevel.Add "EX", "Receivables 3rd Party"
+   dictionaryLevel.Add "NR", "Receivables 3rd Party"
+   dictionaryLevel.Add "GT", "Receivables 3rd Party"
+   dictionaryLevel.Add "G1", "Receivables 3rd Party" 
+   dictionaryLevel.Add "G2", "Receivables 3rd Party"
+   dictionaryLevel.Add "G3", "Receivables 3rd Party"
+   dictionaryLevel.Add "G4", "Receivables 3rd Party" 
+   dictionaryLevel.Add "G5", "Receivables 3rd Party" 
+   dictionaryLevel.Add "CN", "Receivables 3rd Party"
+   dictionaryLevel.Add "VO", "Receivables 3rd Party"
+   dictionaryLevel.Add "CL", "Receivables 3rd Party"
+   dictionaryLevel.Add "XR", "Receivables 3rd Party" 
+   dictionaryLevel.Add "TH", "Receivables 3rd Party"
+   dictionaryLevel.Add "PY", "Payables - 3rd Party"
+   dictionaryLevel.Add "TP", "Payables - 3rd Party"  
+   dictionaryLevel.Add "PT", "Payables - 3rd Party" 
+   dictionaryLevel.Add "RM", "Payables - 3rd Party"
+   dictionaryLevel.Add "PK", "Payables - 3rd Party"
+   dictionaryLevel.Add "M0", "Payables - 3rd Party"
+   dictionaryLevel.Add "M1", "Payables - 3rd Party" 
+   dictionaryLevel.Add "M2", "Payables - 3rd Party"
+   dictionaryLevel.Add "L0", "Payables - 3rd Party"
+   dictionaryLevel.Add "L1", "Payables - 3rd Party" 
+   dictionaryLevel.Add "L2", "Payables - 3rd Party" 
+   dictionaryLevel.Add "L3", "Payables - 3rd Party"
+   dictionaryLevel.Add "U0", "Payables - 3rd Party"
+   dictionaryLevel.Add "U1", "Payables - 3rd Party"
+   dictionaryLevel.Add "U2", "Payables - 3rd Party" 
+   dictionaryLevel.Add "S0", "Payables - 3rd Party"
+   dictionaryLevel.Add "S1", "Payables - 3rd Party"
+   dictionaryLevel.Add "S2", "Payables - 3rd Party" 
+   dictionaryLevel.Add "S3", "Payables - 3rd Party" 
+   dictionaryLevel.Add "S4", "Payables - 3rd Party"
+   dictionaryLevel.Add "S5", "Payables - 3rd Party"
+   dictionaryLevel.Add "O0", "Payables - 3rd Party"
+   dictionaryLevel.Add "O1", "Payables - 3rd Party" 
+   dictionaryLevel.Add "O2", "Payables - 3rd Party"
+   dictionaryLevel.Add "O3", "Payables - 3rd Party"
+   dictionaryLevel.Add "X0", "Payables - 3rd Party" 
+   dictionaryLevel.Add "X1", "Payables - 3rd Party" 
+   dictionaryLevel.Add "X2", "Payables - 3rd Party"
+   dictionaryLevel.Add "X3", "Payables - 3rd Party"
+   dictionaryLevel.Add "X4", "Payables - 3rd Party"
+   dictionaryLevel.Add "0F", "Payables - 3rd Party" 
+   dictionaryLevel.Add "1F", "Payables - 3rd Party"
+   dictionaryLevel.Add "2F", "Payables - 3rd Party"
+   dictionaryLevel.Add "P0", "Payables - 3rd Party"   
+   dictionaryLevel.Add "P1", "Payables - 3rd Party"
+   dictionaryLevel.Add "P2", "Payables - 3rd Party"
+   dictionaryLevel.Add "P3", "Payables - 3rd Party" 
+   dictionaryLevel.Add "P4", "Payables - 3rd Party"
+   dictionaryLevel.Add "T1", "Payables - 3rd Party"
+   dictionaryLevel.Add "T2", "Payables - 3rd Party" 
+   dictionaryLevel.Add "T5", "Payables - 3rd Party" 
+   dictionaryLevel.Add "T4", "Payables - 3rd Party"
+   dictionaryLevel.Add "LC", "Payables - 3rd Party"
+   dictionaryLevel.Add "RE", "Payables - 3rd Party"
+   dictionaryLevel.Add "N0", "Payables - 3rd Party" 
+   dictionaryLevel.Add "N1", "Payables - 3rd Party"
+   dictionaryLevel.Add "N2", "Payables - 3rd Party"
+   dictionaryLevel.Add "N3", "Payables - 3rd Party" 
+   dictionaryLevel.Add "N4", "Payables - 3rd Party"
+   dictionaryLevel.Add "N5", "Payables - 3rd Party"
+   dictionaryLevel.Add "N6", "Payables - 3rd Party"  
+   
+   dictionaryLevel.Add "I8", "Operational Intercompany Receivables" 
+   dictionaryLevel.Add "I9", "Operational Intercompany Receivables"
+    
+   dictionaryLevel.Add "PB", "Operational Intercompany Payables" 
+   dictionaryLevel.Add "PN", "Operational Intercompany Payables"    
+ 
+   dictionaryLevel.Add "IL", "Cashflow from IC Service Fees, Royalties, Divs and Int./notional" 
+   dictionaryLevel.Add "II", "Cashflow from IC Service Fees, Royalties, Divs and Int./notional" 
+   dictionaryLevel.Add "SR", "Cashflow from IC Service Fees, Royalties, Divs and Int./notional"
+    
+   dictionaryLevel.Add "CT", "Cash Flow from Internal Transfers (incl. cross-currency)" 
+   
+   dictionaryLevel.Add "CI", "Physical Cash Pool flows" 
+   dictionaryLevel.Add "CU", "Physical Cash Pool flows" 
+   
+   dictionaryLevel.Add "NN", "Cash Pool transactions and Intragroups" 
+   dictionaryLevel.Add "NC", "Cash Pool transactions and Intragroups"
+
+   dictionaryLevel.Add "3D", "Cash Flow from Change in Debt and Investments" 
+   dictionaryLevel.Add "ID", "Cash Flow from Change in Debt and Investments" 
+   dictionaryLevel.Add "3I", "Cash Flow from Change in Debt and Investments" 
+   dictionaryLevel.Add "I3", "Cash Flow from Change in Debt and Investments"
+    
+   dictionaryLevel.Add "FH", "Cashflow from change in equity, divs, M&A & other fin. incm/exps" 
+   dictionaryLevel.Add "MA", "Cashflow from change in equity, divs, M&A & other fin. incm/exps"
+
+   dictionaryLevel.Add "BA", "Balance adjustment (justify on monthly net debt reporting)" 
+   
+   dictionaryLevel.Add "OI", "Decrease / (Increase) in restricted cash and cash in transit" 
+   
+   dictionaryLevel.Add "CD", "Cash diff and flows not classified - pending reconciliation"
+
+   dictionaryLevel.Add "2N", "Inflows from Notional Pool" 
+   
+   dictionaryLevel.Add "1N", "Outflows to Notional Pool"
+                                       
+   DCFGroupingLevel2Dictionary = dictionaryLevel(FundsType)
+End Function
+
+Function DCFGroupingLevel3Dictionary(FundsType)
+   Dim dictionaryLevel
+   Set dictionaryLevel = CreateObject("Scripting.Dictionary")
+    
+   dictionaryLevel.Add "CF", "Operational Cash Flow 3P" 
+      
+   dictionaryLevel.Add "TR", "Trade Receivables"
+   dictionaryLevel.Add "RT", "Trade Receivables"
+   dictionaryLevel.Add "DD", "Trade Receivables"
+   dictionaryLevel.Add "KA", "Trade Receivables" 
+   dictionaryLevel.Add "K0", "Trade Receivables"
+   dictionaryLevel.Add "K1", "Trade Receivables"
+   dictionaryLevel.Add "K2", "Trade Receivables" 
+   dictionaryLevel.Add "K3", "Trade Receivables" 
+   dictionaryLevel.Add "K4", "Trade Receivables"
+   dictionaryLevel.Add "K5", "Trade Receivables"
+   dictionaryLevel.Add "K6", "Trade Receivables"
+   dictionaryLevel.Add "K7", "Trade Receivables" 
+   dictionaryLevel.Add "K8", "Trade Receivables"
+   dictionaryLevel.Add "K9", "Trade Receivables"
+   dictionaryLevel.Add "OK", "Trade Receivables" 
+   dictionaryLevel.Add "WH", "Trade Receivables" 
+   dictionaryLevel.Add "EX", "Trade Receivables" 
+
+   dictionaryLevel.Add "RC", "Non-trade Receivables"   
+   dictionaryLevel.Add "NR", "Non-trade Receivables"
+   dictionaryLevel.Add "GT", "Non-trade Receivables"
+   dictionaryLevel.Add "G1", "Non-trade Receivables" 
+   dictionaryLevel.Add "G2", "Non-trade Receivables"
+   dictionaryLevel.Add "G3", "Non-trade Receivables"
+   dictionaryLevel.Add "G4", "Non-trade Receivables" 
+   dictionaryLevel.Add "G5", "Non-trade Receivables" 
+   dictionaryLevel.Add "CN", "Non-trade Receivables"
+   dictionaryLevel.Add "VO", "Non-trade Receivables"
+   dictionaryLevel.Add "CL", "Non-trade Receivables"
+   dictionaryLevel.Add "XR", "Non-trade Receivables" 
+   dictionaryLevel.Add "TH", "Non-trade Receivables"  
+        
+   dictionaryLevel.Add "TP", "Trade Payables" 
+   dictionaryLevel.Add "PT", "Trade Payables"  
+   dictionaryLevel.Add "RM", "Trade Payables"
+   dictionaryLevel.Add "PK", "Trade Payables"
+   dictionaryLevel.Add "M0", "Trade Payables"
+   dictionaryLevel.Add "M1", "Trade Payables" 
+   dictionaryLevel.Add "M2", "Trade Payables"
+   dictionaryLevel.Add "L0", "Trade Payables"
+   dictionaryLevel.Add "L1", "Trade Payables" 
+   dictionaryLevel.Add "L2", "Trade Payables" 
+   dictionaryLevel.Add "L3", "Trade Payables"
+   dictionaryLevel.Add "U0", "Trade Payables"
+   dictionaryLevel.Add "U1", "Trade Payables"
+   dictionaryLevel.Add "U2", "Trade Payables" 
+   dictionaryLevel.Add "S0", "Trade Payables"
+   dictionaryLevel.Add "S1", "Trade Payables"
+   dictionaryLevel.Add "S2", "Trade Payables" 
+   dictionaryLevel.Add "S3", "Trade Payables" 
+   dictionaryLevel.Add "S4", "Trade Payables"
+  dictionaryLevel.Add "S5", "Trade Payables"
+   dictionaryLevel.Add "O0", "Trade Payables"
+   dictionaryLevel.Add "O1", "Trade Payables" 
+   dictionaryLevel.Add "O2", "Trade Payables"
+   dictionaryLevel.Add "O3", "Trade Payables"
+   dictionaryLevel.Add "X0", "Trade Payables" 
+   dictionaryLevel.Add "X1", "Trade Payables" 
+   dictionaryLevel.Add "X2", "Trade Payables"
+   dictionaryLevel.Add "X3", "Trade Payables"
+   dictionaryLevel.Add "X4", "Trade Payables"
+   dictionaryLevel.Add "0F", "Trade Payables" 
+   dictionaryLevel.Add "1F", "Trade Payables"
+   dictionaryLevel.Add "2F", "Trade Payables"
+   
+   dictionaryLevel.Add "PY", "Other Payables" 
+   dictionaryLevel.Add "P0", "Other Payables"   
+   dictionaryLevel.Add "P1", "Other Payables"
+   dictionaryLevel.Add "P2", "Other Payables"
+   dictionaryLevel.Add "P3", "Other Payables" 
+   dictionaryLevel.Add "P4", "Other Payables"
+   dictionaryLevel.Add "T1", "Other Payables"
+   dictionaryLevel.Add "T2", "Other Payables" 
+   dictionaryLevel.Add "T5", "Other Payables" 
+   dictionaryLevel.Add "T4", "Other Payables"
+   dictionaryLevel.Add "LC", "Other Payables"
+   dictionaryLevel.Add "RE", "Other Payables"
+   dictionaryLevel.Add "N0", "Other Payables" 
+   dictionaryLevel.Add "N1", "Other Payables"
+   dictionaryLevel.Add "N2", "Other Payables"
+   dictionaryLevel.Add "N3", "Other Payables" 
+   dictionaryLevel.Add "N4", "Other Payables"
+   dictionaryLevel.Add "N5", "Other Payables"
+   dictionaryLevel.Add "N6", "Other Payables"  
+   
+   dictionaryLevel.Add "I8", "Product IC Receivables" 
+   
+   dictionaryLevel.Add "I9", "Non Product IC Receivables"
+    
+   dictionaryLevel.Add "PB", "Product IC Payables" 
+   
+   dictionaryLevel.Add "PN", "Non Product IC Payables"    
+ 
+   dictionaryLevel.Add "IL", "Intercompany Loans" 
+   
+   dictionaryLevel.Add "II", "Intercompany Interest" 
+   
+   dictionaryLevel.Add "SR", "Service fees, Royalties and Dividends"
+   
+   dictionaryLevel.Add "CT", "Cash Flow from Internal Transfers (incl. cross-currency)" 
+      
+   dictionaryLevel.Add "CI", "Inflows from Physical Cash Pool" 
+   
+   dictionaryLevel.Add "CU", "Outflows to Physical Cash Pool" 
+   
+   dictionaryLevel.Add "NN", "Flows settled via netting, from IH bank account or Cash Pool" 
+   
+   dictionaryLevel.Add "NC", "Intercompany Flows not settled via netting"
+
+   dictionaryLevel.Add "3D", "Change in 3rd party debt (borrowings and bonds)" 
+   
+   dictionaryLevel.Add "ID", "Interest on 3rd party debt (borrowings and bonds)" 
+   
+   dictionaryLevel.Add "3I", "Time deposits and other non-liquid investments" 
+   
+   dictionaryLevel.Add "I3", "Interests on Time deposits and other non-liquid investments"
+    
+   dictionaryLevel.Add "FH", "Bank fees, collateral & hedging cash flows, other fin. incm/exps" 
+   
+   dictionaryLevel.Add "MA", "Change in equity, third-party dividends, M&A activities"
+
+   dictionaryLevel.Add "BA", "Balance adjustment (justify on monthly net debt reporting)" 
+   
+   dictionaryLevel.Add "OI", "Decrease / (Increase) in restricted cash and cash in transit" 
+   
+   dictionaryLevel.Add "CD", "Cash diff and flows not classified - pending reconciliation"
+
+   dictionaryLevel.Add "2N", "Inflows from Notional Pool" 
+   
+   dictionaryLevel.Add "1N", "Outflows to Notional Pool"
+                                          
+   DCFGroupingLevel3Dictionary = dictionaryLevel(FundsType)
+End Function
+
+Function DCFGroupingLevel4Dictionary(FundsType)
+   Dim dictionaryLevel
+   Set dictionaryLevel = CreateObject("Scripting.Dictionary")
+    
+   dictionaryLevel.Add "CF", "Operational Cash Flow 3P" 
+      
+   dictionaryLevel.Add "TR", "Trade Receivables"
+       
+   dictionaryLevel.Add "RT", "Trade Receivables"
+   
+   dictionaryLevel.Add "DD", "Direct Distribution"
+   
+   dictionaryLevel.Add "KA", "Key Accounts" 
+   dictionaryLevel.Add "K0", "Key Accounts"
+   dictionaryLevel.Add "K1", "Key Accounts"
+   dictionaryLevel.Add "K2", "Key Accounts" 
+   dictionaryLevel.Add "K3", "Key Accounts" 
+   dictionaryLevel.Add "K4", "Key Accounts"
+   dictionaryLevel.Add "K5", "Key Accounts"
+   dictionaryLevel.Add "K6", "Key Accounts"
+   dictionaryLevel.Add "K7", "Key Accounts" 
+   dictionaryLevel.Add "K8", "Key Accounts"
+   dictionaryLevel.Add "K9", "Key Accounts"
+   dictionaryLevel.Add "OK", "Key Accounts"
+    
+   dictionaryLevel.Add "WH", "Wholesalers" 
+   
+   dictionaryLevel.Add "EX", "Export" 
+  
+   dictionaryLevel.Add "RC", "Non-Trade Receivables"
+         
+   dictionaryLevel.Add "NR", "Non-trade Receivables"
+   
+   dictionaryLevel.Add "GT", "Governmental NTR"
+   dictionaryLevel.Add "G1", "Governmental NTR" 
+   dictionaryLevel.Add "G2", "Governmental NTR"
+   dictionaryLevel.Add "G3", "Governmental NTR"
+   dictionaryLevel.Add "G4", "Governmental NTR" 
+   dictionaryLevel.Add "G5", "Governmental NTR"
+    
+   dictionaryLevel.Add "CN", "Commercial NTR"
+   dictionaryLevel.Add "VO", "Commercial NTR"
+   dictionaryLevel.Add "CL", "Commercial NTR"
+   dictionaryLevel.Add "XR", "Commercial NTR" 
+   dictionaryLevel.Add "TH", "Commercial NTR"  
+        
+   dictionaryLevel.Add "TP", "Trade Payables"  
+   dictionaryLevel.Add "PT", "Trade Payables"  
+   
+   dictionaryLevel.Add "RM", "Direct Materials"
+   dictionaryLevel.Add "PK", "Direct Materials"
+   
+   dictionaryLevel.Add "M0", "Sales&Mktg"
+   dictionaryLevel.Add "M1", "Sales&Mktg" 
+   dictionaryLevel.Add "M2", "Sales&Mktg" 
+   
+   dictionaryLevel.Add "L0", "Logistics"
+   dictionaryLevel.Add "L1", "Logistics" 
+   dictionaryLevel.Add "L2", "Logistics" 
+   dictionaryLevel.Add "L3", "Logistics"
+   
+   dictionaryLevel.Add "U0", "Utilities"
+   dictionaryLevel.Add "U1", "Utilities"
+   dictionaryLevel.Add "U2", "Utilities"
+    
+   dictionaryLevel.Add "S0", "Services"
+   dictionaryLevel.Add "S1", "Services"
+   dictionaryLevel.Add "S2", "Services" 
+   dictionaryLevel.Add "S3", "Services" 
+   dictionaryLevel.Add "S4", "Services"
+   dictionaryLevel.Add "S5", "Services" 
+   
+   dictionaryLevel.Add "O0", "Other Trade Payables"
+   dictionaryLevel.Add "O1", "Other Trade Payables" 
+   dictionaryLevel.Add "O2", "Other Trade Payables"
+   dictionaryLevel.Add "O3", "Other Trade Payables" 
+   
+   dictionaryLevel.Add "X0", "CAPEX Pay" 
+   dictionaryLevel.Add "X1", "CAPEX Pay" 
+   dictionaryLevel.Add "X2", "CAPEX Pay"
+   dictionaryLevel.Add "X3", "CAPEX Pay"
+   dictionaryLevel.Add "X4", "CAPEX Pay"
+   
+   dictionaryLevel.Add "0F", "Products" 
+   dictionaryLevel.Add "1F", "Products"
+   dictionaryLevel.Add "2F", "Products"
+   
+   dictionaryLevel.Add "PY", "Other Payables"
+      
+   dictionaryLevel.Add "P0", "People" 
+   dictionaryLevel.Add "P1", "People"
+   dictionaryLevel.Add "P2", "People"
+   dictionaryLevel.Add "P3", "People"
+   dictionaryLevel.Add "P4", "People"
+   
+   dictionaryLevel.Add "T1", "Taxes"
+   dictionaryLevel.Add "T2", "Taxes"
+   dictionaryLevel.Add "T5", "Taxes"
+   dictionaryLevel.Add "T4", "Taxes"
+   
+   dictionaryLevel.Add "LC", "Customer payables"
+   dictionaryLevel.Add "RE", "Customer payables"
+   
+   dictionaryLevel.Add "N0", "Non-trade Payables"
+   dictionaryLevel.Add "N1", "Non-trade Payables"
+   dictionaryLevel.Add "N2", "Non-trade Payables"
+   dictionaryLevel.Add "N3", "Non-trade Payables"
+   dictionaryLevel.Add "N4", "Non-trade Payables"
+   dictionaryLevel.Add "N5", "Non-trade Payables"
+   dictionaryLevel.Add "N6", "Non-trade Payables"  
+ 
+   dictionaryLevel.Add "I8", "Product IC Receivables" 
+   
+   dictionaryLevel.Add "I9", "Non Product IC Receivables"
+    
+   dictionaryLevel.Add "PB", "Product IC Payables" 
+   
+   dictionaryLevel.Add "PN", "Non Product IC Payables"    
+ 
+   dictionaryLevel.Add "IL", "Intercompany Loans" 
+   
+   dictionaryLevel.Add "II", "Intercompany Interest" 
+   
+   dictionaryLevel.Add "SR", "Service fees, Royalties and Dividends"
+   
+   dictionaryLevel.Add "CT", "Cash Flow from Internal Transfers (incl. cross-currency)" 
+      
+   dictionaryLevel.Add "CI", "Inflows from Physical Cash Pool" 
+   
+   dictionaryLevel.Add "CU", "Outflows to Physical Cash Pool" 
+   
+   dictionaryLevel.Add "NN", "Flows settled via netting, from IH bank account or Cash Pool" 
+   
+   dictionaryLevel.Add "NC", "Intercompany Flows not settled via netting"
+
+   dictionaryLevel.Add "3D", "Change in 3rd party debt (borrowings and bonds)" 
+   
+   dictionaryLevel.Add "ID", "Interest on 3rd party debt (borrowings and bonds)" 
+   
+   dictionaryLevel.Add "3I", "Time deposits and other non-liquid investments" 
+   
+   dictionaryLevel.Add "I3", "Interests on Time deposits and other non-liquid investments"
+    
+   dictionaryLevel.Add "FH", "Bank fees, collateral & hedging cash flows, other fin. incm/exps" 
+   
+   dictionaryLevel.Add "MA", "Change in equity, third-party dividends, M&A activities"    
+   
+   dictionaryLevel.Add "BA", "Balance adjustment (justify on monthly net debt reporting)" 
+   
+   dictionaryLevel.Add "OI", "Decrease / (Increase) in restricted cash and cash in transit" 
+   
+   dictionaryLevel.Add "CD", "Cash diff and flows not classified - pending reconciliation"
+
+   dictionaryLevel.Add "2N", "Inflows from Notional Pool" 
+   
+   dictionaryLevel.Add "1N", "Outflows to Notional Pool"
+                                          
+   DCFGroupingLevel4Dictionary = dictionaryLevel(FundsType)
+End Function
+
+Function GetPrincipalPaymentDate(Entity, RunNumberCode, FlowDate)
+Dim FlowMonth, FlowYear
+Dim DictionaryKey
+
+FlowMonth = Month(FlowDate)
+FlowYear = Year(FlowDate)
+DictionaryKey = Entity & "_" & RunNumberCode & "_" & FlowMonth & "_" & FlowYear
+
+Dim PaymentDate
+GetPrincipalPaymentDate = DictUDDs(DictionaryKey)
+End Function
+
+Function AmountIfPrimaryPaid(Entity, FlowDate, Amount)
+
+If (IsFlowOnPrimaryPaymentDate(Entity, FlowDate) = True) Then
+  AmountIfPrimaryPaid = Amount
+Else
+  AmountIfPrimaryPaid = 0
+End If
+
+End Function 
+ 
+Function IsFlowOnPaymentRunDate(Entity, FlowDate, RunCode)
+
+Dim PaymentDate
+PaymentDate = GetPrincipalPaymentDate(Entity, RunCode, FlowDate)
+
+If (FlowDate = PaymentDate) Then
+  IsFlowOnPaymentRunDate = True
+Else 
+  IsFlowOnPaymentRunDate = False
+End If
+
+End Function 
+ 
+Sub FillUDDData()
+Dim mConnection, recordSet
+Dim db, srv, proc, user, pwd
+
+DictUDDs.RemoveAll
+
+db = "IT2PROD"
+srv = "ONEGDADB006"
+sql = "select F290A, F290B from T290 where F290D='U'"
+user = "IT2_USER"
+pwd = "IT2_BOFA"
+Set mConnection = CreateObject("ADODB.Connection")
+mConnection.Open "Provider=SQLOLEDB.1;Data Source=" & srv & ";Initial Catalog="&db,user,pwd
+set recordSet = CreateObject("ADODB.Recordset")
+recordSet.Open sql, mConnection, 1, 1
+recordSet.MoveFirst
+
+Dim UDDDate
+Dim UDDMonth, UDDYear
+Dim UDDName
+
+DO while not recordSet.EOF
+  UDDDate = CDate(recordSet(1) + 22646)
+  UDDMonth = Month (UDDDate)
+  UDDYear = Year(UDDDate)
+  UDDName = recordSet(0)
+  
+  DictionaryKey = UDDName & "_" & UDDMonth & "_" & UDDYear
+
+  If (DictUDDs.Exists(DictionaryKey) = False) Then
+    DictUDDs.Add DictionaryKey, UDDDate
+  End If
+  
+  recordSet.MoveNext
+Loop
+Set mConnection = Nothing
+End Sub
+
+
+Function TotalDiscretionaryPayables(Amount, FundsType, Data3)
+
+If (FundsType = "PY" Or _
+    FundsType = "TP") Then
+  TotalDiscretionaryPayables= Amount
+ElseIf (FundsType = "P0" Or _
+    FundsType = "P1" Or _
+    FundsType = "P2" Or _
+    FundsType = "P3" Or _
+    FundsType = "P4" Or _
+    FundsType = "T1" Or _
+    FundsType = "T2" Or _
+    FundsType = "T5" Or _
+    FundsType = "T4" Or _
+FundsType = "U0" Or _
+FundsType = "U1" Or _
+FundsType = "U2" Or _
+    (Data3 = "RUK" And FundsType = "L3")) Then
+  TotalDiscretionaryPayables= -Amount
+Else
+  TotalDiscretionaryPayables= 0
+End If
+  
+End Function
+
+Function TotalNonDiscretionaryPayables(Amount, FundsType, Data3)
+
+If (FundsType = "P0" Or _
+    FundsType = "P1" Or _
+    FundsType = "P2" Or _
+    FundsType = "P3" Or _
+    FundsType = "P4" Or _
+    FundsType = "T1" Or _
+    FundsType = "T2" Or _
+    FundsType = "T5" Or _
+    FundsType = "T4" Or _
+FundsType = "U0" Or _
+FundsType = "U1" Or _
+FundsType = "U2" Or _
+    (Data3 = "RUK" And FundsType = "L3")) Then
+  TotalNonDiscretionaryPayables= Amount
+Else
+  TotalNonDiscretionaryPayables= 0
+End If
+  
+End Function 
+
+
+Function TotalPayables(Amount, FundsType)
+
+If (FundsType = "PY" Or _
+    FundsType = "TP") Then
+  TotalPayables = Amount
+Else
+  TotalPayables = 0
+End If
+  
+End Function
+
+Function TotallingArray(Uplevels,Field)
+
+myArr = Grid.SuperGroupDataValues(Uplevels,Field)
+
+myTotal = 0
+
+for i=lbound(myArr) to ubound(myArr)
+  myTotal = myTotal + myArr(i) 
+next
+
+TotallingArray = myTotal
+
+end Function
+
+
+Function TotalNonDiscPayRuns(Amount, FundsType, Entity, FlowDate, Data3)
+
+Dim IsPrimary, IsSecondary
+
+IsPrimary = IsFlowOnPaymentRunDate(Entity, FlowDate, "PR1")
+IsSecondary = IsFlowOnPaymentRunDate(Entity, FlowDate, "PR2")
+
+If (IsPrimary = True Or IsSecondary = True) Then
+  TotalNonDiscPayRuns = TotalNonDiscretionaryPayables(Amount, FundsType, Data3)
+Else 
+  TotalNonDiscPayRuns = 0
+End If
+
+End Function
+
+
+Function TotalPayablesOnPaymentRun(Entity, FlowDate, Amount, FundsType, RunCode)
+
+Dim IsOnRun
+IsOnRun = IsFlowOnPaymentRunDate(Entity, FlowDate, RunCode)
+
+If (IsOnRun = True) Then
+  TotalPayablesOnPaymentRun = TotalPayables(Amount, FundsType)
+Else
+  TotalPayablesOnPaymentRun = 0
+End If
+
+End Function
+
+
+Function DiscretionaryPayablesOnPayRun(Entity, FlowDate, Amount, FundsType, RunCode, Data3)
+
+Dim IsOnRun
+IsOnRun = IsFlowOnPaymentRunDate(Entity, FlowDate, RunCode)
+
+If (IsOnRun = True) Then
+  DiscretionaryPayablesOnPayRun = TotalDiscretionaryPayables(Amount, FundsType, Data3)
+Else
+  DiscretionaryPayablesOnPayRun = 0
+End If
+
+End Function
+
+
+Function AmountIfFullMonth(FlowDate, Amount)
+
+Dim STARTMONTHminusYEAR
+STARTMONTHminusYEAR = DateSerial(Year(Grid.AnchorDate),Month(Grid.AnchorDate) - 12, 1)
+
+If FlowDate >= STARTMONTHminusYEAR Then
+  AmountIfFullMonth = Amount
+Else
+  AmountIfFullMonth = 0
+End If  
+End Function
+
+' ******* Amount Forecasted Vs Actual *******
+
+Function AmountForecasted()
+AmountForecasted = ""
+IF Grid.Field("FlowState") = "Forecast" THEN
+AmountForecasted = Grid.Field("ForecastAmount")
+END IF
+END FUNCTION
+
+Function AmountActual()
+AmountActual = ""
+IF Grid.Field("FlowState") = "Actual" THEN
+AmountActual = Grid.Field("ForecastAmount")
+END IF
+END FUNCTION
+
+
+' ******* Currency Pair for Exposures *******
+Function CurrencyPair ()
+IF Grid.Field("CommodityUnit")= "" THEN
+CurrencyPair = Grid.Field("Curr")&"-"&Grid.Field("CompBaseCurr(Deal)")
+ELSE
+CurrencyPair = Grid.Field("Curr")
+END IF
+End function
+
+' ******* ExposureType for Exposures *******
+Function ExposureType ()
+IF Grid.Field("CommodityUnit")= "" THEN
+ExposureType = "FX Exposure & Other"
+ELSE
+ExposureType = "Comm Exposure"
+END IF
+End function
+
+
