@@ -1,0 +1,94 @@
+Option Explicit
+
+Public Const Mname As String = "MyPopUpMenu"
+
+Sub DeletePopUpMenu()
+    ' Delete the popup menu if it already exists.
+    On Error Resume Next
+    Application.CommandBars(Mname).Delete
+    On Error GoTo 0
+End Sub
+
+Sub CreateDisplayPopUpMenu()
+    ' Delete any existing popup menu.
+    Call DeletePopUpMenu
+
+    ' Create the popup menu.
+    Call Custom_PopUpMenu_1
+
+    ' Display the popup menu.
+    On Error Resume Next
+    Application.CommandBars(Mname).ShowPopup
+    On Error GoTo 0
+End Sub
+
+Sub Custom_PopUpMenu_1()
+    Dim MenuItem As CommandBarPopup
+    Dim MyTeam As CommandBarPopup
+    
+    ' Add the popup menu.
+    With Application.CommandBars.Add(Name:=Mname, Position:=msoBarPopup, _
+         MenuBar:=False, Temporary:=True)
+
+        ' First, add two buttons to the menu.
+        With .Controls.Add(Type:=msoControlButton)
+            .Caption = "Button 1"
+            .FaceId = 71
+            .OnAction = "'" & ThisWorkbook.Name & "'!" & "TestMacro"
+        End With
+
+        With .Controls.Add(Type:=msoControlButton)
+            .Caption = "Button 2"
+            .FaceId = 72
+            .OnAction = "'" & ThisWorkbook.Name & "'!" & "TestMacro"
+        End With
+
+        ' Next, add a menu that contains two buttons.
+        Set MenuItem = .Controls.Add(Type:=msoControlPopup)
+        With MenuItem
+            .Caption = "My Special Menu"
+
+            With .Controls.Add(Type:=msoControlButton)
+                .Caption = "Button 1 in menu"
+                .FaceId = 71
+                .OnAction = "'" & ThisWorkbook.Name & "'!" & "TestMacro"
+            End With
+
+            With .Controls.Add(Type:=msoControlButton)
+                .Caption = "Button 2 in menu"
+                .FaceId = 72
+                .OnAction = "'" & ThisWorkbook.Name & "'!" & "TestMacro"
+            End With
+        End With
+
+        ' Finally, add a single button.
+        With .Controls.Add(Type:=msoControlButton)
+            .Caption = "Button 3"
+            .FaceId = 73
+            .OnAction = "'" & ThisWorkbook.Name & "'!" & "TestMacro"
+        End With
+        ' ravi Buttons.
+        Set MyTeam = .Controls.Add(Type:=msoControlPopup)
+        With MyTeam
+            .Caption = "MyOtherTeam"
+            With .Controls.Add(Type:=msoControlButton)
+                .Caption = "Team-A in menu"
+                .FaceId = 71
+                .OnAction = "'" & ThisWorkbook.Name & "'!" & "TestMacro"
+            End With
+
+            With .Controls.Add(Type:=msoControlButton)
+                .Caption = "Team-A in menu"
+                .FaceId = 72
+                .OnAction = "'" & ThisWorkbook.Name & "'!" & "TestMacro"
+            End With
+        End With
+
+    
+    End With
+End Sub
+
+Sub TestMacro()
+    MsgBox "Hi there! Greetings from the Netherlands."
+End Sub
+
