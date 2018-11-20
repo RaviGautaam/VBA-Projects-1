@@ -1,0 +1,50 @@
+#If VBA7 And Win64 Then
+    Private Declare PtrSafe Function URLDownloadToFile Lib "urlmon" _
+    Alias "URLDownloadToFileA" ( _
+    ByVal pCaller As LongPtr, _
+    ByVal szURL As String, _
+    ByVal szFileName As String, _
+    ByVal dwReserved As LongPtr, _
+    ByVal lpfnCB As LongPtr _
+    ) As Long
+
+#Else
+    Private Declare Function URLDownloadToFile Lib "urlmon" _
+                             Alias "URLDownloadToFileA" ( _
+                             ByVal pCaller As Long, _
+                             ByVal szURL As String, _
+                             ByVal szFileName As String, _
+                             ByVal dwReserved As Long, _
+                             ByVal lpfnCB As Long _
+                             ) As Long
+
+#End If
+
+Public Const BINDF_GETNEWESTVERSION As Long = &H10
+Public Const folderName As String = "D:\New folder\703098304.pdf" '<=Change as required
+Sub aaaa()
+
+Dim IE As Object
+Dim objElement As Object
+Dim objColection As Object
+Dim objShell As Object
+Set objShell = CreateObject("Shell.Application")
+Set IE = CreateObject("InternetExplorer.Application")
+Set objAllWindows = objShell.Windows
+
+For Each ow In objAllWindows
+    If (InStr(1, ow, "Internet Explorer", vbTextCompare)) Then
+        'Debug.Print ow.Document.src
+        ret = URLDownloadToFile(0, ow.Document.src, "D:\New folder\" & "File_01.pdf", BINDF_GETNEWESTVERSION, 0)
+        Exit For
+    End If
+Next
+Set objAllWindows = Nothing
+Set IE = Nothing
+Set objShell = Nothing
+End Sub
+
+'Public Sub downloadPDF()
+'    Dim ret As Long
+'    ret = URLDownloadToFile(0, "D:\Examples\703098304.pdf", folderName, BINDF_GETNEWESTVERSION, 0)
+'End Sub
