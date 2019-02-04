@@ -1,0 +1,25 @@
+Function MaxInString(rng As String) As Double
+    Dim splt() As String
+    Dim length As Integer
+    Dim tempstr As Double
+    Dim j As Integer
+    Dim i&
+    
+    splt = Split(rng)
+    For i = LBound(splt) To UBound(splt)
+        If IsNumeric(splt(i)) Then
+            If splt(i) > MaxInString Then
+                MaxInString = splt(i)
+            End If
+        Else
+        length = Len(splt(i))
+        'tempstr = 0
+        For j = 1 To length
+            If IsNumeric(Right(Left(splt(i), j), 1)) Then
+                tempstr = tempstr * 10 + Right(Left(splt(i), j), 1)
+                MaxInString = tempstr
+            End If
+        Next j
+        End If
+    Next i
+End Function
