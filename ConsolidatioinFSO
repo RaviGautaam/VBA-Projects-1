@@ -1,0 +1,174 @@
+Dim iRow
+Dim dDate
+Dim iFolderPath
+Public mMacroF As String
+
+Sub ListFiles(ByVal iSelectFld As String)
+    iRow = 11
+    If iSelectFld = "" Then
+    Call ListMyFiles(iFolderPath, "True")
+    Else
+    Call ListMyFiles(iSelectFld, "True")
+    End If
+End Sub
+
+Sub ListMyFiles(mySourcePath, IncludeSubfolders)
+    Set MyObject = New Scripting.FileSystemObject
+    Set mySource = MyObject.GetFolder(mySourcePath)
+    On Error Resume Next
+    For Each myFile In mySource.Files
+        iCol = 2
+        Cells(iRow, iCol).Value = myFile.Name
+        iCol = iCol + 1
+        Cells(iRow, iCol).Value = myFile.Path
+        iCol = iCol + 1
+        Cells(iRow, iCol).Value = myFile.Size
+        iCol = iCol + 1
+        Cells(iRow, iCol).Value = myFile.DateLastModified
+        iRow = iRow + 1
+    Next
+    If IncludeSubfolders Then
+        For Each mySubFolder In mySource.SubFolders
+            Call ListMyFiles(mySubFolder.Path, True)
+        Next
+    End If
+
+End Sub
+
+Public Sub GetFolder()
+Dim strPath As String
+Dim fldr As FileDialog
+Dim sItem As String
+
+Dim m_WB As Workbook
+Dim m_SH As Worksheet
+Dim r_RG As Range
+
+mName = ActiveWorkbook.Name
+Set m_WB = Workbooks(mName)
+Set m_SH = m_WB.Sheets("MacroPage")
+
+Call clear
+sStart:
+With m_SH
+    Set fldr = Application.FileDialog(msoFileDialogFolderPicker)
+    With fldr
+        .Title = "Select a Folder"
+        .AllowMultiSelect = False
+        .InitialFileName = strPath
+        If .Show <> -1 Then GoTo NextCode
+        iFolderPath = .SelectedItems(1)
+    End With
+
+    
+    Call ListFiles(iSelectFld)
+
+NextCode:
+    Set fldr = Nothing
+End With
+Call Consolidation
+MsgBox "Done!!"
+End Sub
+Sub clear()
+Dim m_LR As Integer
+m_LR = ThisWorkbook.Sheets("MacroPage").Range("B" & Rows.Count).End(xlUp).Row
+If m_LR >= 11 Then ThisWorkbook.Sheets("MacroPage").Range("B11:E" & m_LR).ClearContents
+End Sub
+Public Sub Consolidation()
+Dim myExtn As String
+Dim myWork_wb As Workbook
+Dim myWrok_sh As Worksheet
+Dim myWork_rg As Range
+Dim myWork_lr As Integer
+Dim myCons_wb As Workbook
+
+Dim macro_WB As Workbook
+Dim macro_SH As Worksheet
+
+Application.ScreenUpdating = False
+
+macro_wbn = ActiveWorkbook.Name
+
+Set macro_WB = Workbooks(macro_wbn)
+Set macro_SH = macro_WB.Sheets("MacroPage")
+macro_WB.Activate
+myWork_lr = macro_SH.Range("B" & Rows.Count).End(xlUp).Row
+Set myCons_wb = Workbooks.Add
+
+For st = 11 To myWork_lr
+    macro_WB.Activate
+    fl_name = macro_SH.Range("B" & st).Value
+    fl_path = macro_SH.Range("C" & st).Value
+    myExtn = Right(fl_name, Len(fl_name) - (InStrRev(fl_name, ".", -1, vbTextCompare)))
+    
+    If LCase(myExtn) = "xlsx" Or LCase(myExtn) = "xls" Then
+        
+        Workbooks.Open Filename:=fl_path, ReadOnly:=True
+        Workbooks(fl_name).Activate
+        Set myWork_wb = Workbooks(fl_name)
+        For i = 1 To myWork_wb.Sheets.Count
+                mCoCd = myWork_wb.Sheets(i).Range("B9").Value
+                mReference = myWork_wb.Sheets(i).Range("C9").Value
+                
+                If mCoCd = "CoCd" And mReference = "Reference" Then
+                    Set myWrok_sh = myWork_wb.Sheets(i)
+                    With myWrok_sh
+                        .Rows("1:8").Delete
+                        .Columns("A:A").Delete
+                        .Columns("D:D").Delete
+                        .Rows("2").Delete
+                        cCoCd = .Range("A1").Value
+                        cReference = .Range("B1").Value
+                            If cCoCd = "CoCd" And cReference = "Reference" Then
+                                this_wb_lr = .Range("A" & .Rows.Count).End(xlUp).Row
+                                .Range("A1:Z" & this_wb_lr).AutoFilter field:=5, Criteria1:=">=22000000", Operator:=xlFilterValues, Criteria2:="<=23999999"
+                                end_lr = .Range("A" & .Rows.Count).End(xlUp).Row
+                                If end_lr >= 2 Then .Range("E2:E" & end_lr).SpecialCells(xlCellTypeVisible).EntireRow.Delete
+                                ActiveSheet.AutoFilterMode = False
+                                
+                                this_wb_nlr = .Range("A" & .Rows.Count).End(xlUp).Row
+                                
+                                myCons_wb.Activate
+                                myCons_wb.Sheets(1).Select
+                                If myCons_wb.Sheets(1).Range("A1").Value = "" Then
+                                    .Activate
+                                    .Range("A1:Z" & this_wb_nlr).Copy
+                                    myCons_wb.Activate
+                                    myCons_wb.Sheets(1).Select
+                                    Range("A1").PasteSpecial xlPasteValuesAndNumberFormats
+                                    Range("J2:J" & this_wb_nlr).Value = fl_name
+                                    .Activate
+                                    Application.DisplayAlerts = False
+                                    myWork_wb.Close
+                                    Application.DisplayAlerts = True
+                                Else
+                                    consol_lr = myCons_wb.Sheets(1).Range("A" & Rows.Count).End(xlUp).Row
+                                    .Activate
+                                    .Range("A2:Z" & this_wb_nlr).Copy
+                                    myCons_wb.Activate
+                                    myCons_wb.Sheets(1).Select
+                                    Range("A" & consol_lr + 1).PasteSpecial xlPasteValuesAndNumberFormats
+                                    Nconsol_lr = myCons_wb.Sheets(1).Range("A" & Rows.Count).End(xlUp).Row
+                                    Range("J" & consol_lr + 1 & ":J" & Nconsol_lr).Value = fl_name
+                                    .Activate
+                                    Application.DisplayAlerts = False
+                                    myWork_wb.Close
+                                    Application.DisplayAlerts = True
+                                End If
+                            Else
+                                MsgBox "this workbook" & fl_name & "has something wrong in formatting so do manual !!"
+                                macro_WB.Activate
+                                macro_SH.Range("B" & st & ":B" & st).Interior.ColorIndex = 2
+                                .Activate
+                                myWork_wb.Close
+                            End If
+                    End With
+                End If
+        Next
+        
+    End If
+Next
+
+Application.ScreenUpdating = True
+
+End Sub
