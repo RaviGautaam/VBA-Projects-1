@@ -1,0 +1,15 @@
+Sub ListWindows()
+Dim wn As Excel.Window
+For Each wn In Application.Windows
+    Debug.Print wn.Caption
+Next wn
+End Sub
+Or, if you want to activate them, as in your sample code
+
+Sub ActivateWindows()
+Dim wn As Excel.Window
+For Each wn In Application.Windows
+    wn.Activate
+    MsgBox wn.Caption & " Window Activated"
+Next wn
+End Sub
