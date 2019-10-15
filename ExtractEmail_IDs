@@ -1,0 +1,66 @@
+Sub tThis()
+Dim iCell As Range
+Dim iCl As Range
+Dim q() As Variant
+q = Array("a", "b", "c", "d", "c")
+iLR = Sheet2.Range("A" & Rows.Count).End(xlUp).Row
+For i = 1 To iLR
+    If Left(Sheet2.Range("A" & i).Value, 3) = "From:" Then
+        iLen = Len(Sheet2.Range("A" & i).Value)
+            For e = 1 To iLen
+                v = Mid(Sheet2.Range("A" & i).Value, e, 1)
+                If v = "<" Then
+                    st = e
+                End If
+                If v = ">" Then
+                    ed = e
+                End If
+                If st <> 0 And ed <> 0 Then
+                    eEmail = Mid(Sheet2.Range("A" & i).Value, st + 1, (ed - st) - 1)
+                    iRow = Sheet2.Range("Z" & Rows.Count).End(xlUp).Row
+                    Sheet2.Range("Z" & iRow + 1).Value = eEmail
+                    st = 0
+                    ed = 0
+                End If
+            Next
+    End If
+    If Left(Sheet2.Range("A" & i).Value, 3) = "To:" Then
+        iLen = Len(Sheet2.Range("A" & i).Value)
+            For e = 1 To iLen
+                v = Mid(Sheet2.Range("A" & i).Value, e, 1)
+                If v = "<" Then
+                    st = e
+                End If
+                If v = ">" Then
+                    ed = e
+                End If
+                If st <> 0 And ed <> 0 Then
+                    eEmail = Mid(Sheet2.Range("A" & i).Value, st + 1, (ed - st) - 1)
+                    iRow = Sheet2.Range("Z" & Rows.Count).End(xlUp).Row
+                    Sheet2.Range("Z" & iRow + 1).Value = eEmail
+                    st = 0
+                    ed = 0
+                End If
+            Next
+    End If
+    If Left(Sheet2.Range("A" & i).Value, 3) = "Cc:" Then
+        iLen = Len(Sheet2.Range("A" & i).Value)
+            For e = 1 To iLen
+                v = Mid(Sheet2.Range("A" & i).Value, e, 1)
+                If v = "<" Then
+                    st = e
+                End If
+                If v = ">" Then
+                    ed = e
+                End If
+                If st <> 0 And ed <> 0 Then
+                    eEmail = Mid(Sheet2.Range("A" & i).Value, st + 1, (ed - st) - 1)
+                    iRow = Sheet2.Range("Z" & Rows.Count).End(xlUp).Row
+                    Sheet2.Range("Z" & iRow + 1).Value = eEmail
+                    st = 0
+                    ed = 0
+                End If
+            Next
+    End If
+Next
+End Sub
