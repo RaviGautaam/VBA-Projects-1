@@ -8,25 +8,25 @@ Dim shp As Shape
 Dim sngMemoLeft As Single
 Dim sngMemoTop As Single
 For Each shp In ActiveSheet.Shapes
-With shp
-sngMemoLeft = .Left
-sngMemoTop = .Top
-With .PictureFormat
-.CropLeft = 30
-.CropTop = 100
-.CropBottom = 140
-.CropRight = 700
+    With shp
+        sngMemoLeft = .Left
+        sngMemoTop = .Top
+        With .PictureFormat
+            .CropLeft = 30
+            .CropTop = 100
+            .CropBottom = 140
+            .CropRight = 700
 
-End With
-.ScaleWidth 0.6, msoFalse, msoScaleFromTopLeft
-.ScaleHeight 0.6, msoFalse, msoScaleFromTopLeft
+        End With
+        .ScaleWidth 0.6, msoFalse, msoScaleFromTopLeft
+        .ScaleHeight 0.6, msoFalse, msoScaleFromTopLeft
 
-.Cut
+        .Cut
 
-Range("B2").Select
-ActiveSheet.Paste
-Range("L2").Select
+        Range("B2").Select
+        ActiveSheet.Paste
+        Range("L2").Select
 
-End With
+    End With
 Next shp
 End Sub
