@@ -1,0 +1,32 @@
+Sub CropPictures()
+'Crop Pictures in Active Sheet
+' based on Picture Original size.
+'–
+    'Selection.ShapeRange.ScaleWidth 0.693716315, msoFalse, msoScaleFromTopLeft
+    'Selection.ShapeRange.ScaleHeight 0.6937162808, msoFalse, msoScaleFromTopLeft
+Dim shp As Shape
+Dim sngMemoLeft As Single
+Dim sngMemoTop As Single
+For Each shp In ActiveSheet.Shapes
+With shp
+sngMemoLeft = .Left
+sngMemoTop = .Top
+With .PictureFormat
+.CropLeft = 30
+.CropTop = 100
+.CropBottom = 140
+.CropRight = 700
+
+End With
+.ScaleWidth 0.6, msoFalse, msoScaleFromTopLeft
+.ScaleHeight 0.6, msoFalse, msoScaleFromTopLeft
+
+.Cut
+
+Range("B2").Select
+ActiveSheet.Paste
+Range("L2").Select
+
+End With
+Next shp
+End Sub
