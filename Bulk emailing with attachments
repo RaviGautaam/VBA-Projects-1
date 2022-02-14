@@ -1,0 +1,131 @@
+Sub sEmail()
+    Dim olEmail As Object
+    Dim olItem As Object
+    Dim oDataSht As Worksheet
+    
+    Set oDataSht = ThisWorkbook.Worksheets(Sheet1.Range("B4").Value)
+    Set olEmail = CreateObject("Outlook.Application")
+    
+    iLR = oDataSht.Range("A" & Rows.Count).End(xlUp).Row
+    iLC = oDataSht.Cells(1, Columns.Count).End(xlToLeft).Column
+    oDataSht.Cells(1, iLC + 1).Value = "Email Sending Status"
+    For i = 1 To 21
+        If Sheet1.Range("O" & i).Value <> "" Then
+            sSub = sSub & Sheet1.Range("O" & i).Value
+        End If
+    Next
+    For x = 2 To iLR
+        If oDataSht.Range("A" & x).Value <> "" Then
+            Call FindReplaceAlmostAnywhere(x, oDataSht.Name)
+            aFile = WorksheetFunction.Substitute(oDataSht.Range("F" & x).Value, " ", "_")
+            Set olItem = olEmail.CreateItem(olMailItem)
+            With olItem
+                .SentOnBehalfOfName = Sheet1.Range("C3").Value
+                .To = oDataSht.Range("A" & x).Value
+                .Subject = Sheet1.Range("C5").Value
+                .htmlbody = sSub
+                .Attachments.Add ThisWorkbook.Path & "\" & aFile & ".docx"
+                .Attachments.Add ThisWorkbook.Path & "\" & Sheet1.Range("C2").Value
+                .display
+                
+            End With
+            Kill (ThisWorkbook.Path & "\" & aFile & ".docx")
+            oDataSht.Cells(x, iLC + 1).Value = Format(Now, "dd-mmm-yyyy hh:mm:ss AM/PM")
+            Set olItem = Nothing
+        End If
+    Next
+    
+End Sub
+Sub FindReplaceAlmostAnywhere(ByVal x As Integer, ByVal sht As String)
+    Dim WordApp As Object
+    Dim oDoc As Object
+    Dim oCont As Object
+    strFile = ThisWorkbook.Path & "\" & ThisWorkbook.Worksheets(sht).Range("F" & x).Value & ".docx"
+    
+    Set WordApp = CreateObject("Word.Application")
+    
+    With WordApp
+        .Visible = True
+        .Documents.Open (strFile)
+        .Activate
+        '.Range(4, 3).Text = "Add Some Text"
+        With .ActiveDocument.Content.Find
+            .ClearFormatting
+            .Replacement.ClearFormatting
+            .Text = "First Name"
+            .Replacement.Text = ThisWorkbook.Worksheets(sht).Range("B" & x).Value
+            .Forward = True
+            .Wrap = 1
+            .Format = False
+            .MatchCase = False
+            .MatchWholeWord = False
+            .MatchWildcards = False
+            .MatchSoundsLike = False
+            .MatchAllWordForms = False
+            .Execute Replace:=2
+        End With
+        With .ActiveDocument.Content.Find
+            .ClearFormatting
+            .Replacement.ClearFormatting
+            .Text = "emp#"
+            .Replacement.Text = ThisWorkbook.Worksheets(sht).Range("D" & x).Value
+            .Forward = True
+            .Wrap = 1
+            .Format = False
+            .MatchCase = False
+            .MatchWholeWord = False
+            .MatchWildcards = False
+            .MatchSoundsLike = False
+            .MatchAllWordForms = False
+            .Execute Replace:=2
+        End With
+        With .ActiveDocument.Content.Find
+            .ClearFormatting
+            .Replacement.ClearFormatting
+            .Text = "Qualification"
+            .Replacement.Text = ThisWorkbook.Worksheets(sht).Range("H" & x).Value
+            .Forward = True
+            .Wrap = 1
+            .Format = False
+            .MatchCase = False
+            .MatchWholeWord = False
+            .MatchWildcards = False
+            .MatchSoundsLike = False
+            .MatchAllWordForms = False
+            .Execute Replace:=2
+        End With
+        With .ActiveDocument.Content.Find
+            .ClearFormatting
+            .Replacement.ClearFormatting
+            .Text = "InstitutionName"
+            .Replacement.Text = ThisWorkbook.Worksheets(sht).Range("I" & x).Value
+            .Forward = True
+            .Wrap = 1
+            .Format = False
+            .MatchCase = False
+            .MatchWholeWord = False
+            .MatchWildcards = False
+            .MatchSoundsLike = False
+            .MatchAllWordForms = False
+            .Execute Replace:=2
+        End With
+        With .ActiveDocument.Content.Find
+            .ClearFormatting
+            .Replacement.ClearFormatting
+            .Text = "Amt"
+            .Replacement.Text = ThisWorkbook.Worksheets(sht).Range("J" & x).Value
+            .Forward = True
+            .Wrap = 1
+            .Format = False
+            .MatchCase = False
+            .MatchWholeWord = False
+            .MatchWildcards = False
+            .MatchSoundsLike = False
+            .MatchAllWordForms = False
+            .Execute Replace:=2
+        End With
+        iFile = WorksheetFunction.Substitute(ThisWorkbook.Worksheets(sht).Range("F" & x).Value, " ", "_")
+        .ActiveDocument.SaveAs (ThisWorkbook.Path & "\" & iFile & ".docx")
+        .Quit SaveChanges:=False
+    End With
+End Sub
