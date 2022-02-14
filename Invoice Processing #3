@@ -1,0 +1,141 @@
+Sub InsertDataIntoDB()
+Dim objConnection As ADODB.Connection
+Dim item As String
+Dim i As Integer
+
+    Set objConnection = New ADODB.Connection
+
+    With objConnection
+        .Provider = "sqloledb"
+        .ConnectionString = "Data Source=DEVSVACRM01;Initial Catalog=GenpactRobots;Integrated Security=SSPI;"
+        .Open
+    End With
+    
+    i = 2
+    Do While Trim(ThisWorkbook.Sheets("VendorList").Range("B" & i).Value) <> ""
+        item = "Insert Into PTP_IP_VendorWithMultiBankAccount(VendorName, VendorNumber) VALUES('" & UCase(Trim(ThisWorkbook.Sheets("VendorList").Range("B" & i).Value)) & "', '" & Trim(ThisWorkbook.Sheets("VendorList").Range("C" & i).Value) & "')"
+        objConnection.Execute (item)
+        i = i + 1
+    Loop
+    
+    objConnection.Close
+    
+Set objConnection = Nothing
+End Sub
+
+Sub ZMIR6()
+Dim sApplication, sSAPguiAuto, sConnection, Session
+
+'Set WshShell = WScript.CreateObject("WScript.Shell")
+
+If Not IsObject(sApplication) Then
+   Set sSAPguiAuto = GetObject("SAPGUI")
+   Set sApplication = sSAPguiAuto.GetScriptingEngine
+End If
+If Not IsObject(sConnection) Then
+   Set sConnection = sApplication.Children(0)
+End If
+If Not IsObject(Session) Then
+   Set Session = sConnection.Children(0)
+End If
+
+    Session.findById("wnd[0]").maximize
+    Session.findById("wnd[0]/tbar[0]/btn[3]").press
+    Session.findById("wnd[0]/tbar[0]/btn[3]").press
+    Session.findById("wnd[0]/tbar[0]/btn[3]").press
+    Session.findById("wnd[0]/tbar[0]/okcd").Text = "/nZMIR6"
+    Session.findById("wnd[0]").sendVKey 0
+    Session.findById("wnd[0]").sendVKey 17
+    Session.findById("wnd[1]/usr/txtENAME-LOW").Text = "aarora1"
+    Session.findById("wnd[1]/usr/txtENAME-LOW").SetFocus
+    Session.findById("wnd[1]/tbar[0]/btn[8]").press
+    Session.findById("wnd[1]/usr/cntlALV_CONTAINER_1/shellcont/shell").currentCellRow = 1
+    Session.findById("wnd[1]/usr/cntlALV_CONTAINER_1/shellcont/shell").selectedRows = "1"
+    Session.findById("wnd[1]/usr/cntlALV_CONTAINER_1/shellcont/shell").doubleClickCurrentCell
+    Session.findById("wnd[0]").sendVKey 8
+    Session.findById("wnd[0]/tbar[0]/btn[86]").press
+
+    Do While Session.findById("wnd[0]/sbar").Text <> ""
+        WshShell.AppActivate ("Regional SAP ECC - SAP")
+        Session.findById("wnd[0]/tbar[0]/btn[86]").press
+        WScript.Sleep 1600
+        WshShell.SendKeys "+{END}"
+        WScript.Sleep 1600
+        WshShell.SendKeys "{DELETE}"
+        WScript.Sleep 1600
+    Loop
+
+    Session.findById("wnd[0]/tbar[1]/btn[32]").press
+    Session.findById("wnd[1]/usr/btnB_SEARCH").press
+    Session.findById("wnd[2]/usr/txtGD_SEARCHSTR").Text = "plant"
+    Session.findById("wnd[2]").sendVKey 0
+    Session.findById("wnd[1]/usr/btnAPP_WL_SING").press
+    Session.findById("wnd[1]/tbar[0]/btn[0]").press
+    Session.findById("wnd[0]").sendVKey 43 'Ctrl + Shift + F7
+    Session.findById("wnd[1]/usr/radRB_OTHERS").Select 'Select from All Available Formats
+    Session.findById("wnd[1]/usr/cmbG_LISTBOX").Key = "08"
+    Session.findById("wnd[1]/tbar[0]/btn[0]").press
+    Session.findById("wnd[1]/usr/subSUBSCREEN_STEPLOOP:SAPLSPO5:0150/sub:SAPLSPO5:0150/radSPOPLI-SELFLAG[0,0]").Select
+    Session.findById("wnd[1]/tbar[0]/btn[0]").press
+    Session.findById("wnd[1]/tbar[0]/btn[0]").press
+    
+    For Each objWB In GetObject(, "Excel.Application").Workbooks
+        If InStr(objWB.Name, "ALVXXL01") > 0 Then Exit For
+    Next
+
+If InStr(objWB.Name, "ALVXXL01") > 0 Then
+    Set objConnection = CreateObject("ADODB.Connection")
+    Set Recordset = CreateObject("ADODB.Recordset")
+
+    With objConnection
+        .Provider = "sqloledb"
+        .ConnectionString = "Data Source=DEVSVACRM01;Initial Catalog=GenpactRobots;Integrated Security=SSPI;"
+        .Open
+    End With
+
+    Dim Plants
+    Recordset.Open "SELECT Plant FROM PTP_IP_Plants", objConnection
+    Do While Not Recordset.EOF
+        Plants = Plants & "," & Recordset("Plant")
+        Recordset.MoveNext
+    Loop
+    Recordset.Close
+    
+    Dim VendorsToExclude
+    Recordset.Open "SELECT VendorNo FROM PTP_IP_VendorToExclude", objConnection
+    Do While Not Recordset.EOF
+        VendorsToExclude = VendorsToExclude & "," & Recordset("VendorNo")
+        Recordset.MoveNext
+    Loop
+    Recordset.Close
+        
+    RowCount = objWB.Sheets(1).UsedRange.Rows.Count
+    For i = 2 To RowCount
+        If InStr(Plants, Trim(objWB.Sheets(1).Cells(i, 73).Value)) > 0 And InStr(VendorsToExclude, Trim(objWB.Sheets(1).Cells(i, 10).Value)) = 0 And InStr(objWB.Sheets(1).Cells(i, 10).Value, "VC") = 0 Then
+            Recordset.Open "SELECT TOP 1 DocNo FROM PTP_IP_Volume WHERE DocNo = '" & objWB.Sheets(1).Cells(i, 1).Value & "'", objConnection
+        
+            If Recordset.EOF Then
+                objConnection.Execute "INSERT INTO PTP_IP_Volume (DocNo, DocYear, DocType, UserName, DocTime, Reference, DocText, InvPty, VolumeDate)" & _
+                " VALUES ('" & objWB.Sheets(1).Cells(i, 1).Value & "', '" & objWB.Sheets(1).Cells(i, 2).Value & "', '" & objWB.Sheets(1).Cells(i, 3).Value & "', '" & objWB.Sheets(1).Cells(i, 4).Value & "', '" & objWB.Sheets(1).Cells(i, 6).Value & "', '" & objWB.Sheets(1).Cells(i, 8).Value & "', '" & objWB.Sheets(1).Cells(i, 14).Value & "', '" & objWB.Sheets(1).Cells(i, 10).Value & "', '" & objWB.Sheets(1).Cells(i, 75).Value & "')"
+            End If
+            Recordset.Close
+        End If
+    Next
+End If
+objConnection.Close
+objWB.Close
+
+    Session.findById("wnd[0]").sendVKey 0
+    Session.findById("wnd[0]/tbar[0]/btn[3]").press
+    Session.findById("wnd[0]/tbar[0]/btn[3]").press
+    Session.findById("wnd[0]/tbar[0]/btn[3]").press
+    
+Set WshShell = Nothing
+Set objWB = Nothing
+Set objConnection = Nothing
+Set objRecordset = Nothing
+Set sApplication = Nothing
+Set sConnection = Nothing
+Set Session = Nothing
+Set sSAPguiAuto = Nothing
+End Sub
