@@ -1,0 +1,68 @@
+Sub RobotRun()
+    Application.DisplayAlerts = False
+    Call ClearAllExistingData
+    Call GetAllVolume
+    Call test
+    Application.DisplayAlerts = True
+End Sub
+
+Sub GetAllVolume()
+Dim RecordNo As Double
+Dim objConnection As ADODB.Connection
+Dim objRecordset As ADODB.Recordset
+
+Set objConnection = New ADODB.Connection
+Set objRecordset = New ADODB.Recordset
+
+SqlQuery = "Select DocNo From PTP_IP_Volume WHERE CurrentStatus Is Null and VolumeDate >= '" & Format(Date - 1, "yyyy-mm-dd") & "'" ' and CurrentStatus = """"')
+'SqlQuery = "Select DocNo From PTP_IP_Volume WHERE VolumeDate >= '" & Format(Date - 1, "yyyy-mm-dd") & "'"
+
+'UserName
+If Format(Date, "dddd") = "Monday" Then
+    SqlQuery = "Select DocNo From PTP_IP_Volume WHERE VolumeDate >= '" & Format(Date - 3, "yyyy-mm-dd") & "'"
+    'SqlQuery = "Select DocNo From PTP_IP_Volume WHERE CurrentStatus Is Null Or (VolumeDate >= '" & Format(DateAdd("d", -3, Date), "yyyy-mm-dd") & "' and CurrentStatus <> 'OCR Data not found')"
+
+End If
+    With objConnection
+        .Provider = "sqloledb"
+        .ConnectionString = "Data Source=DEVSVACRM01;Initial Catalog=GenpactRobots;Integrated Security=SSPI;"
+        .Open
+    End With
+
+objRecordset.Open SqlQuery, objConnection
+
+RecordNo = 3
+If Not objRecordset.EOF Then
+    Do While Not objRecordset.EOF
+        Sheets("PTP_IP_Main").Range("B" & RecordNo).Value = objRecordset("DocNo")
+        RecordNo = RecordNo + 1
+    objRecordset.MoveNext
+    Loop
+End If
+
+Set objConnection = Nothing
+Set objRecordset = Nothing
+End Sub
+
+Sub InsertResult(ByVal DocNo As String, ByVal Result As String, ByVal i As Double)
+Dim objConnection As ADODB.Connection
+On Error GoTo Error2
+Sheets("PTP_IP_Main").Range("C" & i).Value = Result
+
+Set objConnection = New ADODB.Connection
+
+    With objConnection
+        .Provider = "sqloledb"
+        .ConnectionString = "Data Source=DEVSVACRM01;Initial Catalog=GenpactRobots;Integrated Security=SSPI;"
+        .Open
+    End With
+
+    objConnection.Execute "UPDATE PTP_IP_Volume SET ProcessTime = '" & Now() & "', ProcessedBy = '" & Environ("UserName") & "', CurrentStatus = '" & Replace(Result, "'", "''") & "' WHERE DocNo = '" & DocNo & "'"
+    objConnection.Close
+Set objConnection = Nothing
+Exit Sub
+Error2:
+Sheets("PTP_IP_Main").Range("C" & i).Value = "Document is not in OCR Database"
+Set objConnection = Nothing
+End Sub
+
