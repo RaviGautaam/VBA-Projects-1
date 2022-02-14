@@ -1,0 +1,14 @@
+Do
+    Set FSO = CreateObject("Scripting.FileSystemObject")
+    Set fldr = FSO.GetFolder("\\corpfiler27\26585301_n01\AP_IP_Testing")
+    Set Collec_Files = fldr.Files
+    
+    For Each File In Collec_Files
+        FSO.MoveFile "\\corpfiler27\26585301_n01\AP_IP_Testing\*", "D:\IP_P2P\PTP_IP_OCR_Files"
+    Next
+
+    Set FSO = Nothing
+    Set fldr = Nothing
+    Set Collec_Files = Nothing
+	Wscript.Sleep(100000)
+Loop
