@@ -1,0 +1,555 @@
+Sub GetSAPDetails()
+Dim sApplication As Object
+Dim sSAPguiAuto As Object
+Dim sConnection As Object
+Dim sSession As Object
+Dim i, j As Double
+Dim DocID, HeaderText As String
+
+i = 3
+Do Until Sheets("PTP_IP_Main").Range("C" & i).Value = ""
+    i = i + 1
+Loop
+
+j = 1
+Do Until Sheets("PTP_IP_LineItems").Range("D" & j).Value = ""
+    j = j + 1
+Loop
+
+DocID = Trim(Sheets("PTP_IP_Main").Range("B" & i).Value)
+
+If DocID = "" Then
+    Exit Sub
+End If
+
+If sApplication Is Nothing Then
+   Set sSAPguiAuto = GetObject("SAPGUI")
+   Set sApplication = sSAPguiAuto.GetScriptingEngine
+End If
+If sConnection Is Nothing Then
+   Set sConnection = sApplication.Children(0)
+End If
+If sSession Is Nothing Then
+   Set sSession = sConnection.Children(0)
+End If
+
+If Len(Day(Date)) = 1 Then
+    TodayDate = "0" & Day(Date)
+Else
+    TodayDate = Day(Date)
+End If
+If Len(Month(Date)) = 1 Then
+    TodayDate = TodayDate & ".0" & Month(Date)
+Else
+    TodayDate = TodayDate & "." & Month(Date)
+End If
+
+On Error GoTo ErrorHandling
+
+TodayDate = TodayDate & "." & Year(Date)
+    
+    sSession.findById("wnd[0]").maximize
+    sSession.findById("wnd[0]/tbar[0]/btn[3]").press
+    sSession.findById("wnd[0]/tbar[0]/btn[3]").press
+    sSession.findById("wnd[0]/tbar[0]/btn[3]").press
+    sSession.findById("wnd[0]/tbar[0]/okcd").Text = "/nMIR4"
+    sSession.findById("wnd[0]").sendVKey 0
+    sSession.findById("wnd[0]/usr/txtRBKP-BELNR").Text = DocID
+    sSession.findById("wnd[0]/usr/txtRBKP-GJAHR").Text = ""  'Year
+    sSession.findById("wnd[0]").sendVKey 0 'Press Enter
+    
+    If Not CheckCompanyCode(sSession, i, DocID) Then
+        Call InsertResult(DocID, "GL Does Not Exist or Document Deleted", i)
+        sSession.findById("wnd[0]").sendVKey 0
+        Exit Sub
+    End If
+    
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_FI").Select 'Select Detail Tab on SAP
+    
+    If Trim(sSession.findById("wnd[0]/sbar").Text) <> "" Then
+        Call InsertResult(DocID, sSession.findById("wnd[0]/sbar").Text, i) 'MsgBox "Bhai ye document mere bas ki baat nahi hai, kud hi kar le..."
+        Exit Sub
+    End If
+    
+    Sheets("PTP_IP_Main").Range("D" & i).Value = sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_FI/ssubHEADER_SCREEN:SAPLFDCB:0150/txtINVFO-BKTXT").Text
+        
+    'Getting OCR Data
+    Call GetOCRData(Sheets("PTP_IP_Main").Range("D" & i).Value, i, j, DocID)
+    
+    If Trim(Sheets("PTP_IP_Main").Range("E" & i).Value) = "" Then Call InsertResult(DocID, "OCR Data not found", i): Exit Sub
+    
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_TOTAL").Select   'Go to Basic Data Tab
+    sSession.findById("wnd[0]").sendVKey 7   'Press F7
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_TOTAL/ssubHEADER_SCREEN:SAPLFDCB:0010/ctxtINVFO-BUDAT").Text = TodayDate
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subREFERENZBELEG:SAPLMR1M:6211/ctxtRM08M-EBELN").Text = Sheets("PTP_IP_Main").Range("E" & i).Value
+    
+    'added/Started by Ravi Gautam
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_TOTAL/ssubHEADER_SCREEN:SAPLFDCB:0010/ctxtINVFO-BUDAT").Text = TodayDate
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subREFERENZBELEG:SAPLMR1M:6211/ctxtRM08M-EBELN").Text = ""
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subREFERENZBELEG:SAPLMR1M:6211/ctxtRM08M-EBELN").SetFocus
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subREFERENZBELEG:SAPLMR1M:6211/ctxtRM08M-EBELN").caretPosition = 0
+    sSession.findById("wnd[0]").sendVKey 0
+    sSession.findById("wnd[0]").sendVKey 0
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subREFERENZBELEG:SAPLMR1M:6211/ctxtRM08M-EBELN").Text = Sheets("PTP_IP_Main").Range("E" & i).Value
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subREFERENZBELEG:SAPLMR1M:6211/ctxtRM08M-EBELN").SetFocus
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subREFERENZBELEG:SAPLMR1M:6211/ctxtRM08M-EBELN").caretPosition = 10
+    sSession.findById("wnd[0]").sendVKey 0
+    sSession.findById("wnd[0]").sendVKey 0
+    'Ended by Ravi Gautam
+    
+    sSession.findById("wnd[0]").sendVKey 0
+    sSession.findById("wnd[0]").sendVKey 0
+    sSession.findById("wnd[0]").sendVKey 0
+    sSession.findById("wnd[0]").sendVKey 0
+    
+    'ErrorMsg = sSession.findById("wnd[0]/sbar").Text
+        
+    If Trim(sSession.findById("wnd[0]/sbar").Text) <> "" Then
+        Call InsertResult(DocID, sSession.findById("wnd[0]/sbar").Text, i) 'MsgBox "Bhai ye document mere bas ki baat nahi hai, kud hi kar le..."
+        Exit Sub
+    End If
+    If Not CheckCompanyCode(sSession, i, DocID) Then
+        sSession.findById("wnd[0]").sendVKey 0
+        Exit Sub
+    End If
+                 
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subVENDOR_DATA:SAPLMR1M:6510/btnKDAT").press
+    
+    'ErrorMsg = sSession.findById("wnd[0]/sbar").Text
+    
+    If Trim(sSession.findById("wnd[0]/sbar").Text) <> "" Then
+        Call InsertResult(DocID, sSession.findById("wnd[0]/sbar").Text, i) 'MsgBox "Bhai ye document mere bas ki baat nahi hai, kud hi kar le..."
+        Exit Sub
+    End If
+    
+Sheets("PTP_IP_Main").Range("R" & i).Value = CDbl(sSession.findById("wnd[0]/usr/ctxtRF02K-LIFNR").Text) '#SAP VenderNumber
+Sheets("PTP_IP_Main").Range("T" & i).Value = sSession.findById("wnd[0]/usr/subADDRESS:SAPLSZA1:0300/subCOUNTRY_SCREEN:SAPLSZA1:0301/txtADDR1_DATA-NAME1").Text 'SAP Vendor Name
+    sSession.findById("wnd[0]").sendVKey 8
+Sheets("PTP_IP_Main").Range("P" & i).Value = sSession.findById("wnd[0]/usr/txtLFA1-STCEG").Text 'SAP Vender VAT
+    sSession.findById("wnd[0]").sendVKey 0
+If sSession.findById("wnd[0]/usr/tblSAPMF02KTCTRL_ZAHLUNGSVERKEHR/txtLFBK-BANKN[2,0]").Text = "__________________" Then
+    Call InsertResult(DocID, "Vendor Bank Details are Missing", i)
+    Exit Sub
+End If
+Sheets("PTP_IP_Main").Range("N" & i).Value = CDbl(sSession.findById("wnd[0]/usr/tblSAPMF02KTCTRL_ZAHLUNGSVERKEHR/txtLFBK-BANKN[2,0]").Text) 'SAP BankAccountNumber
+    sSession.findById("wnd[0]").sendVKey 12
+TaxKey = sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/cmbDRSEG-MWSKZ[31,0]").Key
+            
+Sheets("PTP_IP_Main").Range("H" & i).Value = sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_TOTAL/ssubHEADER_SCREEN:SAPLFDCB:0010/ctxtINVFO-BLDAT").Text ' SAP Invoice Datee
+Sheets("PTP_IP_Main").Range("F" & i).Value = sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_TOTAL/ssubHEADER_SCREEN:SAPLFDCB:0010/txtINVFO-XBLNR").Text  ' SAP Reference #
+Sheets("PTP_IP_Main").Range("J" & i).Value = CDec(Replace(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_TOTAL/ssubHEADER_SCREEN:SAPLFDCB:0010/txtINVFO-WRBTR").Text, ",", "")) ' SAP Total Amount
+TotalTax = sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_TOTAL/ssubHEADER_SCREEN:SAPLFDCB:0010/txtINVFO-WMWST").Text
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_FI").Select
+sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_FI/ssubHEADER_SCREEN:SAPLFDCB:0150/ctxtINVFO-REINDAT").Text = Sheets("PTP_IP_Main").Range("M" & i).Value   ' Ocr InvRecptDate
+Sheets("PTP_IP_Main").Range("L" & i).Value = sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_FI/ssubHEADER_SCREEN:SAPLFDCB:0150/ctxtINVFO-REINDAT").Text  'SAP InvRecptDate
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_TOTAL").Select
+    
+    If Trim(sSession.findById("wnd[0]/sbar").Text) <> "" Then
+        Call InsertResult(DocID, sSession.findById("wnd[0]/sbar").Text, i) 'MsgBox "Bhai ye document mere bas ki baat nahi hai, kud hi kar le..."
+        Exit Sub
+    End If
+    
+    If sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_TOTAL/ssubHEADER_SCREEN:SAPLFDCB:0010/ctxtINVFO-WAERS").Text <> "ZAR" Then
+        Call InsertResult(DocID, "Currency Value is not ZAR", i)
+        Exit Sub
+    End If
+    
+    If TaxKey = "____________________" Then
+        Call ParkDoc(sSession, i)
+        Call InsertResult(DocID, "Parked", i): Exit Sub
+    End If
+    
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_TOTAL/ssubHEADER_SCREEN:SAPLFDCB:0010/cmbINVFO-MWSKZ").Key = TaxKey
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_TOTAL/ssubHEADER_SCREEN:SAPLFDCB:0010/chkINVFO-XMWST").Selected = True
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY").Select
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY/ssubHEADER_SCREEN:SAPLFDCB:0020/ctxtINVFO-ZFBDT").Text = TodayDate
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_TOTAL").Select
+    'Code added by Ravi Gautam
+    Sheet1.Columns("E:E").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Sheet1.Columns("F:F").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Sheet1.Columns("G:G").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Sheet1.Columns("H:H").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Sheet1.Columns("I:I").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Sheet1.Columns("J:J").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Sheet1.Columns("K:K").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Sheet1.Columns("L:L").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Sheet1.Columns("M:M").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Sheet1.Columns("N:N").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Sheet1.Columns("O:O").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Sheet1.Columns("P:P").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Range("P:P").NumberFormat = "#"
+    Sheet1.Columns("Q:Q").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Range("Q:Q").NumberFormat = "#"
+    Sheet1.Columns("R:R").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Sheet1.Columns("S:S").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Sheet1.Range("AA" & i).Value = "=F" & i & "=G" & i ' Reference #
+    Sheet1.Range("AB" & i).Value = "=H" & i & "=I" & i ' InvoiceDate #
+    Sheet1.Range("AC" & i).Value = "=J" & i & "=K" & i ' TotalAmount #
+    Sheet1.Range("AD" & i).Value = "=L" & i & "=M" & i ' InvRecptDate #
+    Sheet1.Range("AE" & i).Value = "=N" & i & "=O" & i ' BankAccountNumber #
+    Sheet1.Range("AF" & i).Value = "=P" & i & "=Q" & i  ' VenderVat #
+    Sheet1.Range("AG" & i).Value = "=R" & i & "=S" & i ' VenderNumber #
+    Sheet1.Range("AH" & i).Value = "=T" & i & "=U" & i ' VenderName #
+    
+    
+    'Code ended by Ravi Gautam
+    'Check for not enough lines
+    For k = 0 To 10
+        If k = 7 Then sSession.findById("wnd[0]").sendVKey 82: k = 0
+        item = sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-RBLGP[20," & k & "]").Text 'Item
+        If item = "______" Then Call InsertResult(DocID, "Not Enough Lines", i): Exit Sub
+        If IsNumeric(LastItem) And IsNumeric(item) Then
+            If CDec(LastItem) > CDec(item) Then Call InsertResult(DocID, "Not Enough Lines", i): Exit Sub
+        End If
+        If sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-WRBTR[29," & k & "]").Text <> "" Then Exit For
+        LastItem = item7
+    Next
+    
+    
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/btnDESELECT_ALL").press
+    'Call MatchVendorName(i)
+    
+    'On Error Resume Next
+    Dim l As Integer
+    l = j
+    LastItem = 0
+    For k = 0 To 10
+        If k = 7 Then sSession.findById("wnd[0]").sendVKey 82: k = 0
+        item = sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-RBLGP[20," & k & "]").Text 'Item
+        Debug.Print item
+        If LastItem = 1 And item = "______" And Trim(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-WRBTR[29,0]").Text) <> "" Then
+            Call MatchLineItems(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-XBLNR[23,0]").Text, sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-MENGE[25,0]").Text, CDec(Replace(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-NETPR[27,0]").Text, ",", "")), CDec(Replace(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-WRBTR[29,0]").Text, ",", "")), j, i, DocID)
+            If Sheets("PTP_IP_Main").Range("C" & i).Value = "" Then sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M").getAbsoluteRow(0).Selected = True
+            Call ValidateData(i, 0, DocID)
+            Exit For
+        ElseIf item = "______" Then
+            Call ValidateData(i, j, DocID)
+            Exit For
+        ElseIf IsNumeric(LastItem) And IsNumeric(item) Then
+            If CDec(LastItem) > CDec(item) Then Call ValidateData(i, j, DocID): Exit For
+        End If
+        
+        Sheets("PTP_IP_LineItems").Range("B" & j).Value = DocID
+        TaxCode = sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/cmbDRSEG-MWSKZ[31," & k & "]").Text   'Tax Code
+        For m = l To 1000
+            If Sheets("PTP_IP_LineItems").Range("D" & m).Value = "" Then Exit For 'OCR DelNote
+            
+            If Trim(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-WRBTR[29," & k & "]").Text) <> "" And _
+            Trim(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-MENGE[25," & k & "]").Text) <> "" And _
+            Trim(Sheets("PTP_IP_LineItems").Range("J" & m).Value) <> "" Then
+           
+                If Sheets("PTP_IP_LineItems").Range("C" & m).Value = "" And _
+                (InStr(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-XBLNR[23," & k & "]").Text, Trim(Sheets("PTP_IP_LineItems").Range("D" & m).Value)) > 0 Or _
+                InStr(Sheets("PTP_IP_LineItems").Range("D" & m).Value, sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-XBLNR[23," & k & "]").Text) > 0) And _
+                CDec(Trim(Sheets("PTP_IP_LineItems").Range("J" & m).Value)) = CDec(Replace(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-WRBTR[29," & k & "]").Text, ",", "")) Then
+                    Sheets("PTP_IP_LineItems").Range("C" & m).Value = sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-XBLNR[23," & k & "]").Text   'Del. Note
+                    Sheets("PTP_IP_LineItems").Range("I" & m).Value = CDec(Replace(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-WRBTR[29," & k & "]").Text, ",", ""))   'Amount
+                    Sheets("PTP_IP_LineItems").Range("E" & m).Value = sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-MENGE[25," & k & "]").Text   'Quantity
+                    Sheets("PTP_IP_LineItems").Range("G" & m).Value = CDec(Replace(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-NETPR[27," & k & "]").Text, ",", ""))  'Net Price
+                    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M").getAbsoluteRow(CInt(item) - 1).Selected = True
+                    Exit For
+                End If
+                
+            ElseIf Trim(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-WRBTR[29," & k & "]").Text) <> "" And _
+            Trim(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-MENGE[25," & k & "]").Text) = "" And _
+            Trim(Sheets("PTP_IP_LineItems").Range("J" & m).Value) <> "" Then
+           
+                If Sheets("PTP_IP_LineItems").Range("C" & m).Value = "" And _
+                (InStr(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-XBLNR[23," & k & "]").Text, Trim(Sheets("PTP_IP_LineItems").Range("D" & m).Value)) > 0 Or _
+                InStr(Sheets("PTP_IP_LineItems").Range("D" & m).Value, sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-XBLNR[23," & k & "]").Text) > 0) And _
+                CDec(Trim(Sheets("PTP_IP_LineItems").Range("J" & m).Value)) = CDec(Replace(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-WRBTR[29," & k & "]").Text, ",", "")) Then
+                    Sheets("PTP_IP_LineItems").Range("C" & m).Value = sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-XBLNR[23," & k & "]").Text   'Del. Note
+                    Sheets("PTP_IP_LineItems").Range("I" & m).Value = CDec(Replace(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-WRBTR[29," & k & "]").Text, ",", ""))   'Amount
+                    Sheets("PTP_IP_LineItems").Range("E" & m).Value = sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-MENGE[25," & k & "]").Text   'Quantity
+                    Sheets("PTP_IP_LineItems").Range("G" & m).Value = CDec(Replace(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M/txtDRSEG-NETPR[27," & k & "]").Text, ",", ""))  'Net Price
+                    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/subITEMS:SAPLMR1M:6010/tabsITEMTAB/tabpITEMS_PO/ssubTABS:SAPLMR1M:6020/subITEM:SAPLMR1M:6310/tblSAPLMR1MTC_MR1M").getAbsoluteRow(CInt(item) - 1).Selected = True
+                    Exit For
+                End If
+            End If
+        Next
+        LastItem = item
+    Next
+    
+If Sheets("PTP_IP_Main").Range("C" & i).Value <> "" Then Exit Sub
+    
+sSession.findById("wnd[0]").sendVKey 0 'Press Enter
+
+If sSession.findById("wnd[0]/usr/txtRM08M-DIFFERENZ").Text <> 0# Then
+    If Sheets("PTP_IP_Main").Range("C" & i).Value = "" Then Call InsertResult(DocID, "Balance is not 0.00", i)
+Else
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_TOTAL/ssubHEADER_SCREEN:SAPLFDCB:0010/ctxtINVFO-SGTXT").Text = "Matched"
+End If
+
+If Sheets("PTP_IP_Main").Range("C" & i).Value <> "" Then Exit Sub
+
+sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY").Select
+'If all data maching then check before posting
+'session.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_TOTAL/ssubHEADER_SCREEN:SAPLFDCB:0010/ctxtINVFO-SGTXT").text = "Matched"
+'session.findById("wnd[0]/usr/txtRM08M-DIFFERENZ").setFocus
+
+If IsVendorInExceptionList("", Trim(Sheets("PTP_IP_Main").Range("S" & i).Value)) = True Then
+    If InStr(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY/ssubHEADER_SCREEN:SAPLFDCB:0020/ctxtINVFO-ZTERM").Text, "D") > 0 Then
+        sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY/ssubHEADER_SCREEN:SAPLFDCB:0020/ctxtINVFO-ZFBDT").Text = Trim(Sheets("PTP_IP_Main").Range("I" & i).Value)
+    ElseIf InStr(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY/ssubHEADER_SCREEN:SAPLFDCB:0020/ctxtINVFO-ZTERM").Text, "I") > 0 Then
+        sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY/ssubHEADER_SCREEN:SAPLFDCB:0020/ctxtINVFO-ZFBDT").Text = Trim(Sheets("PTP_IP_Main").Range("M" & i).Value)
+    End If
+    sSession.findById("wnd[0]").sendVKey 0 'Press Enter
+Else
+    If InStr(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY/ssubHEADER_SCREEN:SAPLFDCB:0020/ctxtINVFO-ZTERM").Text, "I001") > 0 Or _
+        InStr(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY/ssubHEADER_SCREEN:SAPLFDCB:0020/ctxtINVFO-ZTERM").Text, "I002") > 0 Then
+        sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY/ssubHEADER_SCREEN:SAPLFDCB:0020/ctxtINVFO-ZFBDT").Text = Trim(Sheets("PTP_IP_Main").Range("M" & i).Value)
+    End If
+End If
+
+If sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY/ssubHEADER_SCREEN:SAPLFDCB:0020/ctxtINVFO-NETDT").Text = sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY/ssubHEADER_SCREEN:SAPLFDCB:0020/ctxtINVFO-ZFBDT").Text Then
+    sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY/ssubHEADER_SCREEN:SAPLFDCB:0020/txtINVFO-ZBD1T").Text = "1"
+    sSession.findById("wnd[0]").sendVKey 0 'Press Enter
+End If
+
+If Sheets("PTP_IP_Main").Range("C" & i).Value = "" Then sSession.findById("wnd[0]/tbar[0]/btn[11]").press
+
+If Sheets("PTP_IP_Main").Range("C" & i).Value = "" And InStr(sSession.findById("wnd[0]/sbar").Text, "was posted") > 0 Then
+    Call InsertResult(DocID, "Posted", i)
+Else
+    Call InsertResult(DocID, "Error Occured While Posting the Doc ", i)
+End If
+
+Exit Sub
+ErrorHandling:
+Err.Clear
+Call InsertResult(DocID, "Already Processed", i)
+'MsgBox "I'm Done"
+     
+Set sApplication = Nothing
+Set sConnection = Nothing
+Set sSession = Nothing
+Set sSAPguiAuto = Nothing
+End Sub
+
+Function CheckCompanyCode(ByRef sSession As Object, ByVal i As Integer, ByVal DocID As String) As Boolean
+On Error GoTo ErrorHandling
+    If sSession.findById("wnd[1]").Text = "Information" Then
+        Call InsertResult(DocID, "Incorrect Company Code", i)
+        CheckCompanyCode = False
+    ElseIf sSession.findById("wnd[1]").Text <> "" Then
+        Call InsertResult(DocID, "Unexpected Window - " & sSession.findById("wnd[1]").Text & " Appears After Entering PO Number", i)
+        CheckCompanyCode = False
+    End If
+    Exit Function
+ErrorHandling:
+    Err.Clear
+    CheckCompanyCode = True
+End Function
+
+'+++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Sub test()
+Dim z As Integer
+z = 3
+    Do While ThisWorkbook.Sheets("PTP_IP_Main").Range("B" & z).Value <> ""
+        Call GetSAPDetails
+        z = z + 1
+    Loop
+    
+    'MsgBox "All Document IDs are Processed. You are doing really an awesome job. Now you can enjoy your rest of the day!!!"
+    'Call Main
+End Sub
+
+
+ 
+Sub ValidateData(ByVal i As Double, ByVal j As Double, ByVal DocID As String)
+    Dim t As Double
+    Dim row As Double
+    Dim r As Double
+    Dim s As Worksheet
+    Set s = ThisWorkbook.Sheets("PTP_IP_Main")
+    row = i
+    t = 6
+    
+    Do
+        For r = t To 18 Step 2
+            Debug.Print (Trim(s.Cells(row, r).Value))
+        'Code Added by Ravi Gautam
+        Sheet2.Columns("C:C").TextToColumns , xlDelimited, , False, False, False, True, False, False
+        Sheet2.Columns("D:D").TextToColumns , xlDelimited, , False, False, False, True, False, False
+        Sheet2.Range("L" & row).Value = "=C" & row & "=D" & row 'DelNote Matching
+        Sheet2.Range("M" & row).Value = "=E" & row & "=F" & row 'Quntity Matching
+        Sheet2.Range("N" & row).Value = "=G" & row & "=H" & row 'NetPriceMatching
+        Sheet2.Range("O" & row).Value = "=I" & row & "=J" & row 'Amount  Matching
+        'Code Ended by Ravi Gautam
+            If Sheet2.Range("L" & row).Value = "True" Then ' DelNote matched
+                If r = 14 Then
+                    If UCase(Trim(s.Cells(row, r + 1).Value)) = "" Then GoTo NextRecord
+                    If IsVendorInExceptionList(s.Cells(i, 20).Value, "") Then GoTo NextRecord
+                End If
+                    
+                If Sheets("PTP_IP_Main").Range("C" & i).Value = "" Then
+                    Call InsertResult(DocID, "Missmatch - " & s.Cells(2, r).Value, i) 'Missmatch
+                End If
+                For u = r To r + 1
+                    With s.Cells(row, u).Interior
+                        .Pattern = xlSolid
+                        .PatternColorIndex = xlAutomatic
+                        .Color = 255
+                        .TintAndShade = 0
+                        .PatternTintAndShade = 0
+                    End With
+                Next
+            End If
+NextRecord:
+            If r = 18 And j = 0 Then Exit For
+            If r = 9 And s.Name = "PTP_IP_LineItems" Then Exit For
+            If r = 18 Then Set s = ThisWorkbook.Sheets("PTP_IP_LineItems"): row = j: t = 7: r = 7
+        Next
+        row = row + 1: t = 3
+        
+        If s.Cells(row, 3).Value = "" And s.Cells(row, 4).Value = "" And s.Cells(row, 5).Value = "" And s.Cells(row, 6).Value = "" And _
+        s.Cells(row, 7).Value = "" And s.Cells(row, 8).Value = "" And s.Cells(row, 9).Value = "" Then Exit Do
+    Loop
+
+    Call MatchVendorName(i, DocID)
+End Sub
+
+Sub MatchVendorName(ByVal i As Integer, ByVal DocID As String)
+Dim SAPVenderName() As String
+Dim OCRVenderName() As String
+
+    SAPVenderName() = Split(Replace(Replace(Replace(Replace(Trim(Sheets("PTP_IP_Main").Range("T" & i).Value), "'", ""), "-", ""), ")", ""), "(", ""), " ")
+    OCRVenderName() = Split(Replace(Replace(Replace(Replace(Trim(Sheets("PTP_IP_Main").Range("U" & i).Value), "'", ""), "-", ""), ")", ""), "(", ""), " ")
+    
+    For j = 0 To UBound(SAPVenderName)
+        If InStr(UCase(Sheets("PTP_IP_Main").Range("U" & i).Value), UCase(SAPVenderName(j))) > 0 Then
+            If j = UBound(SAPVenderName) Then Exit Sub
+        Else
+            Exit For
+        End If
+    Next
+
+    For k = 0 To UBound(OCRVenderName)
+        If InStr(UCase(Sheets("PTP_IP_Main").Range("T" & i).Value), UCase(OCRVenderName(k))) > 0 Then
+            If k = UBound(OCRVenderName) Then Exit Sub
+        Else
+            Exit For
+        End If
+    Next
+           
+    Sheets("PTP_IP_Main").Range("T" & i & ":" & "U" & i).Select
+    With Selection.Interior
+        .Pattern = xlSolid
+        .PatternColorIndex = xlAutomatic
+        .Color = 255
+        .TintAndShade = 0
+        .PatternTintAndShade = 0
+    End With
+End Sub
+
+Sub ClearAllExistingData()
+    With Sheets("PTP_IP_Main").Range(Replace(Sheets("PTP_IP_Main").UsedRange.Address, "$A$1:", "$B$3:")).Interior
+        .Pattern = xlNone
+        .TintAndShade = 0
+        .PatternTintAndShade = 0
+    End With
+    Sheets("PTP_IP_Main").Range(Replace(Sheets("PTP_IP_Main").UsedRange.Address, "$A$1:", "$B$3:")).Value = ""
+    With Sheets("PTP_IP_LineItems").Range(Replace(Sheets("PTP_IP_LineItems").UsedRange.Address, "$A$1:", "$B$3:")).Interior
+        .Pattern = xlNone
+        .TintAndShade = 0
+        .PatternTintAndShade = 0
+    End With
+    Sheets("PTP_IP_LineItems").Range(Replace(Sheets("PTP_IP_LineItems").UsedRange.Address, "$A$1:", "$A$3:")).Value = ""
+    Sheets("PTP_IP_Main").Select
+    Sheets("PTP_IP_Main").Range("B3").Select
+End Sub
+
+Function MatchLineItems(ByVal SAPDelNote As String, ByVal SAPQuantity As String, ByVal SAPNetPrice As String, ByVal SAPAmount As String, ByVal j As Double, ByVal i As Double, ByVal DocID As String)
+Dim OCRTotalQuantity As Double
+Dim OCRTotalAmout As Double
+Dim m As Double
+    m = j
+    
+    Sheets("PTP_IP_LineItems").Range("C" & m).Value = SAPDelNote
+    Sheets("PTP_IP_LineItems").Range("E" & m).Value = SAPQuantity
+    Sheets("PTP_IP_LineItems").Range("G" & m).Value = SAPNetPrice
+    Sheets("PTP_IP_LineItems").Range("I" & m).Value = SAPAmount
+    'Code added by Ravi Gautam
+    Sheet2.Columns("E:E").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Sheet2.Columns("F:F").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Sheet2.Columns("G:G").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Sheet2.Columns("H:H").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Sheet2.Columns("I:I").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    Sheet2.Columns("J:J").TextToColumns , xlDelimited, , False, False, False, True, False, False
+    'Code ended by Ravi Gautam
+    Do While Sheets("PTP_IP_LineItems").Range("J" & m).Value <> "" ' OCR Amount
+        OCRTotalAmout = OCRTotalAmout + CDec(Trim(Sheets("PTP_IP_LineItems").Range("J" & m).Value))
+        If CDec(Trim(Sheets("PTP_IP_LineItems").Range("F" & m).Value)) <> "" Then OCRTotalQuantity = OCRTotalQuantity + CDec(Trim(Sheets("PTP_IP_LineItems").Range("F" & m).Value))
+        m = m + 1
+    Loop
+    
+    If SAPQuantity <> "1" And InStr(CStr(OCRTotalQuantity), SAPQuantity) = 0 Then
+        If Sheets("PTP_IP_Main").Range("C" & i).Value = "" Then Call InsertResult(DocID, "Quantity Variance", i)
+    End If
+    
+    If CDec(SAPAmount) <> CDec(OCRTotalAmout) Then
+        If (CDec(SAPAmount) - CDec(OCRTotalAmout)) > 1 Then
+            If Sheets("PTP_IP_Main").Range("C" & i).Value = "" Then Call InsertResult(DocID, "Missmatch - Line Items Total Amount Mismatch", i)
+        End If
+    End If
+    
+        
+End Function
+
+Function IsVendorInExceptionList(ByVal VendorName As String, ByVal VendorNumber As String) As Boolean
+Dim objConnection As ADODB.Connection
+Dim objRecordset As ADODB.Recordset
+
+Set objConnection = New ADODB.Connection
+Set objRecordset = New ADODB.Recordset
+'SqlQuery = "Select DocNo From PTP_IP_Volume WHERE CurrentStatus Is Null Or (VolumeDate >= '" & Format(DateAdd("d", -3, Date), "yyyy-mm-dd") & "' and CurrentStatus <> 'OCR Data not found')"
+If VendorName <> "" Then SqlQuery = "Select * From PTP_IP_VendorWithMultiBankAccount WHERE VendorName = '" & Replace(UCase(Trim(VendorName)), "'", "''") & "' and Comments <> 'DISCOUNTED'"
+If VendorNumber <> "" Then SqlQuery = "Select * From PTP_IP_CriticalVendorList WHERE VendorNumber = '" & Replace(UCase(Trim(VendorNumber)), "'", "''") & "' and Comments <> 'DISCOUNTED'"
+
+    With objConnection
+        .Provider = "sqloledb"
+        .ConnectionString = "Data Source=DEVSVACRM01;Initial Catalog=GenpactRobots;Integrated Security=SSPI;"
+        .Open
+    End With
+
+objRecordset.Open SqlQuery, objConnection
+
+If Not objRecordset.EOF Then
+    IsVendorInExceptionList = True
+Else
+    IsVendorInExceptionList = False
+End If
+
+objRecordset.Close
+objConnection.Close
+
+Set objConnection = Nothing
+Set objRecordset = Nothing
+End Function
+
+Sub ParkDoc(ByRef sSession As Object, ByVal i As Double)
+sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_FI").Select
+'sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_FI/ssubHEADER_SCREEN:SAPLFDCB:0150/ctxtINVFO-REINDAT").Text = Trim(ThisWorkbook.Sheets("PTP_IP_Main").Range("I" & i).Value)
+sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_FI/ssubHEADER_SCREEN:SAPLFDCB:0150/ctxtINVFO-REINDAT").Text = Trim(ThisWorkbook.Sheets("PTP_IP_Main").Range("M" & i).Value)  'Changes made by Archit
+sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY").Select
+If IsVendorInExceptionList("", Trim(Sheets("PTP_IP_Main").Range("S" & i).Value)) = True Then
+    If InStr(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY/ssubHEADER_SCREEN:SAPLFDCB:0020/ctxtINVFO-ZTERM").Text, "D") > 0 Then
+        sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY/ssubHEADER_SCREEN:SAPLFDCB:0020/ctxtINVFO-ZFBDT").Text = Trim(Sheets("PTP_IP_Main").Range("I" & i).Value)
+    ElseIf InStr(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY/ssubHEADER_SCREEN:SAPLFDCB:0020/ctxtINVFO-ZTERM").Text, "I") > 0 Then
+        sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY/ssubHEADER_SCREEN:SAPLFDCB:0020/ctxtINVFO-ZFBDT").Text = Trim(Sheets("PTP_IP_Main").Range("M" & i).Value)
+    End If
+    sSession.findById("wnd[0]").sendVKey 0 'Press Enter
+Else
+    If InStr(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY/ssubHEADER_SCREEN:SAPLFDCB:0020/ctxtINVFO-ZTERM").Text, "I001") > 0 Or _
+        InStr(sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY/ssubHEADER_SCREEN:SAPLFDCB:0020/ctxtINVFO-ZTERM").Text, "I002") > 0 Then
+        sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY/ssubHEADER_SCREEN:SAPLFDCB:0020/ctxtINVFO-ZFBDT").Text = Trim(Sheets("PTP_IP_Main").Range("M" & i).Value)
+    Else
+        sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_PAY/ssubHEADER_SCREEN:SAPLFDCB:0020/ctxtINVFO-ZFBDT").Text = Format(Date, "dd.mm.yyyy")
+    End If
+End If
+
+sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_TOTAL").Select
+sSession.findById("wnd[0]/usr/subHEADER_AND_ITEMS:SAPLMR1M:6005/tabsHEADER/tabpHEADER_TOTAL/ssubHEADER_SCREEN:SAPLFDCB:0010/ctxtINVFO-SGTXT").Text = "No GRN - " & Format(Date, "dd.mm.yyyy")
+sSession.findById("wnd[0]/tbar[1]/btn[5]").press
+End Sub
