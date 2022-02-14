@@ -1,0 +1,182 @@
+Sub pptValidation()
+
+Dim mFile As String
+Dim mPath As String
+Dim FSO As New FileSystemObject
+Dim iFile As File
+Dim iFolder As Folder
+Dim iPPT As New PowerPoint.Application
+Dim PPT_File As PowerPoint.Presentation
+Dim iSlide As PowerPoint.slide
+Dim iWorkingFile As Workbook
+Dim iWsht As Worksheet
+Dim pShp As PowerPoint.Shape
+Dim ptShp As PowerPoint.Shape
+Dim eShp As Shape
+Dim eChart As Excel.Chart
+Dim eRng As Range
+'start time
+StartTime = Timer
+Application.DisplayAlerts = False
+Application.AskToUpdateLinks = False
+mFile = ThisWorkbook.Name
+mPath = ThisWorkbook.Path
+Sheet2.Range("J1").Value = "FileName"
+Sheet2.Range("K1").Value = "FilePath"
+Sheet2.Range("L1").Value = "FileSize"
+i = 2
+Set iFolder = FSO.GetFolder(mPath & "\")
+
+For Each iFile In iFolder.Files
+    If LCase(Right(iFile.Name, 4)) = "xlsx" Then
+        Sheet2.Range("J" & i).Value = iFile.Name
+        Sheet2.Range("K" & i).Value = iFile.Path
+        Sheet2.Range("L" & i).Value = iFile.Size
+        i = i + 1
+    End If
+Next
+
+For Each iFile In iFolder.Files
+    If LCase(Right(iFile.Name, 4)) = "pptx" Then
+        iPPT.Visible = True
+        Set PPT_File = iPPT.Presentations.Open(Filename:=iFile.Path)
+    End If
+Next
+
+iLR = Sheet1.Range("B2").End(xlDown).Row
+'Set iWorkingFile = Workbooks.Open(Filename:=mPath & "\" & Sheet1.Range("O5").Value, ReadOnly:=True)
+For x = 3 To iLR
+
+    slNum = Sheet1.Range("B" & x).Value
+    iSelect = Sheet1.Range("C" & x).Value
+    pType = Sheet1.Range("D" & x).Value
+    iDel = Sheet1.Range("I" & x).Value
+    iSht = Sheet1.Range("J" & x).Value
+    iWB = Sheet1.Range("O" & x).Value
+    If iWB <> "None" Then
+        If Sheet1.Range("D" & x).Value <> "" And pType = "Chart" Then
+            If iWB <> Sheet1.Range("O" & x - 1).Value Then
+                Set iWorkingFile = Workbooks.Open(Filename:=mPath & "\" & iWB, ReadOnly:=True)
+            End If
+            If iWB <> Sheet1.Range("O" & x + 1).Value Then
+                iWorkingFile.Close
+                If iWB = Sheet1.Range("O" & x - 1).Value Then
+                Set iWorkingFile = Workbooks.Open(Filename:=mPath & "\" & iWB, ReadOnly:=True)
+                GoTo icon:
+                End If
+                GoTo iNext:
+            End If
+icon:
+            Set iWsht = Workbooks(iWB).Worksheets(iSht)
+            Set iSlide = PPT_File.Slides(slNum)
+            iSlide.Select
+            If iDel = "Yes" Then
+                For Each pShp In iSlide.Shapes
+                    pShp.Select
+                    iNm = pShp.Name
+                    If LCase(Left(iNm, 7)) = "picture" Or LCase(Left(iNm, 6)) = "object" Then
+                        pShp.Delete
+                    End If
+                Next
+                For Each pShp In iSlide.Shapes
+                    pShp.Select
+                    iNm = pShp.Name
+                    If LCase(Left(iNm, 7)) = "picture" Or LCase(Left(iNm, 6)) = "object" Then
+                        pShp.Delete
+                    End If
+                Next
+            End If
+            iWsht.Activate
+            If LCase(Left(iSelect, 5)) = "group" Then
+                If Sheet1.Range("N" & x).Value = "Business Review Input File" Then
+                    Call Color
+                End If
+                Application.Wait (Now() + TimeSerial(0, 0, 2))
+                iWsht.Activate
+                Set eShp = iWsht.Shapes(iSelect)
+                eShp.CopyPicture Appearance:=xlScreen, Format:=xlPicture
+                iPPT.Activate
+                iSlide.Shapes.Paste
+            Else
+                Set eShp = iWsht.Shapes(iSelect)
+                a = eShp.Chart.ChartType
+                If a = 119 Then
+                    eShp.CopyPicture Appearance:=xlScreen, Format:=xlPicture
+                    Application.Wait (Now() + TimeSerial(0, 0, 2))
+                    eShp.CopyPicture Appearance:=xlScreen, Format:=xlPicture
+                    iSlide.Shapes.Paste
+                Else
+                    eShp.Select
+                    eShp.Copy
+                    Application.Wait (Now() + TimeSerial(0, 0, 2))
+                    eShp.Copy
+                    iPPT.Activate
+                    iSlide.Select
+                    iSlide.Shapes.PasteSpecial DataType:=ppPasteOLEObject, Link:=msoTrue
+                End If
+                
+            End If
+            
+            
+            Set ptShp = iSlide.Shapes(iSlide.Shapes.Count)
+            iPPT.Activate
+            ptShp.Select
+            iPPT.ActiveWindow.Selection.ShapeRange.Left = Sheet1.Range("E" & x).Value
+            iPPT.ActiveWindow.Selection.ShapeRange.Width = Sheet1.Range("G" & x).Value
+            iPPT.ActiveWindow.Selection.ShapeRange.top = Sheet1.Range("H" & x).Value
+            iPPT.ActiveWindow.Selection.ShapeRange.Height = Sheet1.Range("F" & x).Value
+        End If
+        If Sheet1.Range("D" & x).Value <> "" And pType = "table" Then
+            If iWB <> Sheet1.Range("O" & x - 1).Value Then
+                Set iWorkingFile = Workbooks.Open(Filename:=mPath & "\" & iWB, ReadOnly:=True)
+            End If
+            If iWB <> Sheet1.Range("O" & x + 1).Value Then
+                iWorkingFile.Close
+                GoTo iNext:
+            End If
+                Set iWsht = Workbooks(iWB).Worksheets(iSht)
+                Set iSlide = PPT_File.Slides(slNum)
+                iSlide.Select
+                With iSlide
+                    If iDel = "Yes" Then
+                        For Each pShp In .Shapes
+                            .Select
+                            iNm = pShp.Name
+                            If LCase(Left(iNm, 6)) = "object" Then
+                                pShp.Delete
+                            End If
+                        Next
+                    End If
+                    iWsht.Activate
+                    Set eRng = iWsht.Range(iSelect)
+                    eRng.Select
+                    
+                    Application.Wait (Now() + TimeSerial(0, 0, 2))
+                    eRng.Copy
+                    iSlide.Shapes.PasteSpecial DataType:=ppPasteOLEObject, Link:=msoTrue
+                    Set ptShp = iSlide.Shapes(iSlide.Shapes.Count)
+                    iPPT.Activate
+                    ptShp.Select
+                    iPPT.ActiveWindow.Selection.ShapeRange.Left = Sheet1.Range("E" & x).Value
+                    iPPT.ActiveWindow.Selection.ShapeRange.Width = Sheet1.Range("G" & x).Value
+                    iPPT.ActiveWindow.Selection.ShapeRange.top = Sheet1.Range("H" & x).Value
+                    iPPT.ActiveWindow.Selection.ShapeRange.Height = Sheet1.Range("F" & x).Value
+                End With
+        End If
+    End If
+iNext:
+
+Next
+'end time Calculation
+Application.DisplayAlerts = True
+Application.AskToUpdateLinks = True
+MinutesElapsed = Format((Timer - StartTime) / 86400, "hh:mm:ss")
+MsgBox "Your Activity is successfully completed in :" & Chr(10) & MinutesElapsed & " minutes"
+End Sub
+Function AlreadyOpen(ByVal oWB As String) As Boolean
+    Dim wkb As Workbook
+    On Error Resume Next
+    Set wkb = Workbooks(oWB)
+    AlreadyOpen = Not wkb Is Nothing
+    Set wkb = Nothing
+End Function
